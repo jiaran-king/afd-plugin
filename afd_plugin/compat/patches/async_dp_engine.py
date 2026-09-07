@@ -9,7 +9,7 @@ This module patches:
 4. ``vllm.v1.engine.core_client.DPAsyncMPClient.add_request_async``
 
 Why:
-    vLLM 0.26.0's native MoE DP path uses ``DPEngineCoreProc`` and DP wave
+    vLLM 0.28.0's native MoE DP path uses ``DPEngineCoreProc`` and DP wave
     notifications. AFD async-DP Attention ranks are connector-driven and must
     step independently while keeping the original DP/EP topology for expert
     placement and weight loading.
@@ -47,10 +47,8 @@ if TYPE_CHECKING:
 
     from vllm.config import VllmConfig
     from vllm.v1.engine import EngineCoreRequest
-    from vllm.v1.engine.coordinator import DPCoordinator
     from vllm.v1.engine.utils import (
-        CoreEngineActorManager,
-        CoreEngineProcManager,
+        CoreEngineLaunch,
         EngineZmqAddresses,
     )
     from vllm.v1.executor import Executor
@@ -114,9 +112,9 @@ def run_engine_core(
                 engine_core = engine_core_module.DPEngineCoreProc(*args, **kwargs)
             # ### PATCH END: AFD async-DP Attention engine selection
         else:
-            parallel_config.data_parallel_size = 1
-            parallel_config.data_parallel_size_local = 1
-            parallel_config.data_parallel_rank = 0
+            # vLLM v0.28 centralizes independent-DP normalization so all
+            # derived rank/world-size fields stay consistent.
+            parallel_config.reconfigure_for_independent_dp_rank()
             engine_core = EngineCoreProc(*args, engine_index=dp_rank, **kwargs)
 
         assert engine_core is not None
@@ -187,15 +185,7 @@ def launch_core_engines(
     executor_class: type[Executor],
     log_stats: bool,
     addresses: EngineZmqAddresses,
-    num_api_servers: int = 1,
-) -> Iterator[
-    tuple[
-        CoreEngineProcManager | CoreEngineActorManager | None,
-        DPCoordinator | None,
-        EngineZmqAddresses,
-        Queue | None,
-    ]
-]:
+) -> Iterator[CoreEngineLaunch]:
     """Disable coordinator wave mode while launching AFD async-DP engines."""
 
     parallel_config = vllm_config.parallel_config
@@ -253,7 +243,9 @@ def launch_core_engines(
             log_stats=log_stats,
         )
 
-        yield engine_actor_manager, coordinator, addresses, tensor_queue
+        yield engine_utils_module.CoreEngineLaunch(
+            engine_actor_manager, coordinator, addresses, tensor_queue
+        )
         return
 
     if offline_mode:
@@ -280,13 +272,10 @@ def launch_core_engines(
     if parallel_config.enable_elastic_ep:
         handshake_local_only = False
 
-    rpc_port = (
-        parallel_config.data_parallel_rpc_port or engine_utils_module.get_open_port()
-    )
     handshake_address = engine_utils_module.get_engine_client_zmq_addr(
         handshake_local_only,
         host,
-        rpc_port,
+        parallel_config.data_parallel_rpc_port,
     )
 
     if local_engines_only and dp_rank > 0:
@@ -318,17 +307,18 @@ def launch_core_engines(
         else:
             local_engine_manager = None
 
-        yield local_engine_manager, coordinator, addresses, tensor_queue
+        launch = engine_utils_module.CoreEngineLaunch(
+            local_engine_manager, coordinator, addresses, tensor_queue
+        )
+        yield launch
 
         engine_utils_module.wait_for_engine_startup(
             handshake_socket,
-            addresses,
             engines_to_handshake,
             parallel_config,
             dp_size > 1 and vllm_config.model_config.is_moe,
             vllm_config.cache_config,
-            local_engine_manager,
-            coordinator.proc if coordinator else None,
+            launch,
         )
 
 

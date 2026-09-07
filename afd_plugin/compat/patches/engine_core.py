@@ -13,7 +13,6 @@ from __future__ import annotations
 import gc
 import queue
 import time
-from collections import deque
 from collections.abc import Callable
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any
@@ -26,6 +25,56 @@ if TYPE_CHECKING:
     from vllm.config import VllmConfig
     from vllm.v1.executor import Executor
     from vllm.v1.kv_cache_interface import KVCacheConfig
+
+
+_ORIGINAL_ENGINE_CORE_INIT_ATTR = "_afd_plugin_original_engine_core_init"
+_ORIGINAL_ENGINE_CORE_KV_ATTR = "_afd_plugin_original_engine_core_initialize_kv_caches"
+_ORIGINAL_ENGINE_CORE_SHUTDOWN_ATTR = "_afd_plugin_original_engine_core_shutdown"
+_ORIGINAL_ENGINE_CORE_BUSY_LOOP_ATTR = "_afd_plugin_original_engine_core_busy_loop"
+_ORIGINAL_DP_ENGINE_CORE_BUSY_LOOP_ATTR = (
+    "_afd_plugin_original_dp_engine_core_busy_loop"
+)
+
+if not hasattr(core_module, _ORIGINAL_ENGINE_CORE_INIT_ATTR):
+    setattr(
+        core_module, _ORIGINAL_ENGINE_CORE_INIT_ATTR, core_module.EngineCore.__init__
+    )
+if not hasattr(core_module, _ORIGINAL_ENGINE_CORE_KV_ATTR):
+    setattr(
+        core_module,
+        _ORIGINAL_ENGINE_CORE_KV_ATTR,
+        core_module.EngineCore._initialize_kv_caches,
+    )
+if not hasattr(core_module, _ORIGINAL_ENGINE_CORE_SHUTDOWN_ATTR):
+    setattr(
+        core_module,
+        _ORIGINAL_ENGINE_CORE_SHUTDOWN_ATTR,
+        core_module.EngineCore.shutdown,
+    )
+if not hasattr(core_module, _ORIGINAL_ENGINE_CORE_BUSY_LOOP_ATTR):
+    setattr(
+        core_module,
+        _ORIGINAL_ENGINE_CORE_BUSY_LOOP_ATTR,
+        core_module.EngineCoreProc.run_busy_loop,
+    )
+if not hasattr(core_module, _ORIGINAL_DP_ENGINE_CORE_BUSY_LOOP_ATTR):
+    setattr(
+        core_module,
+        _ORIGINAL_DP_ENGINE_CORE_BUSY_LOOP_ATTR,
+        core_module.DPEngineCoreProc.run_busy_loop,
+    )
+
+_original_engine_core_init = getattr(core_module, _ORIGINAL_ENGINE_CORE_INIT_ATTR)
+_original_engine_core_kv = getattr(core_module, _ORIGINAL_ENGINE_CORE_KV_ATTR)
+_original_engine_core_shutdown = getattr(
+    core_module, _ORIGINAL_ENGINE_CORE_SHUTDOWN_ATTR
+)
+_original_engine_core_busy_loop = getattr(
+    core_module, _ORIGINAL_ENGINE_CORE_BUSY_LOOP_ATTR
+)
+_original_dp_engine_core_busy_loop = getattr(
+    core_module, _ORIGINAL_DP_ENGINE_CORE_BUSY_LOOP_ATTR
+)
 
 
 # Patch reason: AFD FFN ranks run as connector daemons instead of normal
@@ -41,7 +90,7 @@ def __init__(
     log_stats: bool,
     executor_fail_callback: Callable | None = None,
     include_finished_set: bool = False,
-):
+) -> None:
     # ### PATCH START: AFD FFN EngineCore daemon initialization
     # FFN ranks are connector daemons, so stop EngineCore initialization after
     # executor construction instead of setting up KV cache and scheduler state.
@@ -57,139 +106,18 @@ def __init__(
         return
     # ### PATCH END: AFD FFN EngineCore daemon initialization
 
-    # plugins need to be loaded at the engine/scheduler level too
-    from vllm.plugins import load_general_plugins
-
-    load_general_plugins()
-
-    self.vllm_config = vllm_config
-    if not vllm_config.parallel_config.data_parallel_rank_local:
-        core_module.logger.info(
-            "Initializing a V1 LLM engine (v%s) with config: %s",
-            core_module.VLLM_VERSION,
-            vllm_config,
-        )
-
-    self.log_stats = log_stats
-
-    # Setup Model.
-    self.model_executor = executor_class(vllm_config)
-    self._pooler_config_logged = False
-    if executor_fail_callback is not None:
-        self.model_executor.register_failure_callback(executor_fail_callback)
-
-    self.available_gpu_memory_for_kv_cache = -1
-
-    if core_module.envs.VLLM_ELASTIC_EP_SCALE_UP_LAUNCH:
-        self._eep_scale_up_before_kv_init()
-
-    # Setup KV Caches and update CacheConfig after profiling.
-    kv_cache_config = self._initialize_kv_caches(vllm_config)
-    self.structured_output_manager = core_module.StructuredOutputManager(vllm_config)
-
-    # Setup scheduler.
-    Scheduler = vllm_config.scheduler_config.get_scheduler_cls()
-
-    if len(kv_cache_config.kv_cache_groups) == 0:  # noqa: SIM102
-        # Encoder models without KV cache don't support
-        # chunked prefill. But do SSM models?
-        if vllm_config.scheduler_config.enable_chunked_prefill:
-            core_module.logger.warning(
-                "Disabling chunked prefill for model without KVCache"
-            )
-            vllm_config.scheduler_config.enable_chunked_prefill = False
-
-    scheduler_block_size, hash_block_size = core_module.resolve_kv_cache_block_sizes(
-        kv_cache_config,
+    # Delegation exception: vLLM v0.28's normal constructor gained new state
+    # (including weight-version and EC-output ownership). Reuse the exact
+    # target implementation for every non-AFD engine instead of retaining a
+    # second copied constructor that would drift on the next upstream change.
+    return _original_engine_core_init(
+        self,
         vllm_config,
+        executor_class,
+        log_stats,
+        executor_fail_callback,
+        include_finished_set,
     )
-
-    self.scheduler = Scheduler(
-        vllm_config=vllm_config,
-        kv_cache_config=kv_cache_config,
-        structured_output_manager=self.structured_output_manager,
-        include_finished_set=include_finished_set,
-        log_stats=self.log_stats,
-        block_size=scheduler_block_size,
-        hash_block_size=hash_block_size,
-    )
-    self.use_spec_decode = vllm_config.speculative_config is not None
-    self.check_for_draft_tokens = (
-        self.use_spec_decode or vllm_config.model_config.is_diffusion
-    )
-    if self.scheduler.connector is not None:  # type: ignore
-        self.model_executor.init_kv_output_aggregator(self.scheduler.connector)  # type: ignore
-
-    mm_registry = core_module.MULTIMODAL_REGISTRY
-    self.mm_receiver_cache = mm_registry.engine_receiver_cache_from_config(vllm_config)
-
-    # If a KV connector is initialized for scheduler, we want to collect
-    # handshake metadata from all workers so the connector in the scheduler
-    # will have the full context
-    kv_connector = self.scheduler.get_kv_connector()
-    if kv_connector is not None:
-        # Collect and store KV connector xfer metadata from workers
-        # (after KV cache registration)
-        xfer_handshake_metadata = (
-            self.model_executor.get_kv_connector_handshake_metadata()
-        )
-
-        if xfer_handshake_metadata:
-            # xfer_handshake_metadata is list of dicts from workers
-            # Each dict already has structure {(pp_rank, tp_rank): metadata}
-            # Merge all worker dicts into a single dict
-            content: dict[tuple[int, int], Any] = {}
-            for worker_dict in xfer_handshake_metadata:
-                if worker_dict is not None:
-                    content.update(worker_dict)
-            kv_connector.set_xfer_handshake_metadata_pp_aware(content)
-
-    # Setup batch queue for pipeline parallelism.
-    # Batch queue for scheduled batches. This enables us to asynchronously
-    # schedule and execute batches, and is required by pipeline parallelism
-    # to eliminate pipeline bubbles.
-    self.batch_queue_size = vllm_config.max_concurrent_batches
-    self.batch_queue = None
-    if self.batch_queue_size > 1:
-        core_module.logger.debug(
-            "Batch queue is enabled with size %d",
-            self.batch_queue_size,
-        )
-        self.batch_queue = deque(maxlen=self.batch_queue_size)
-
-    self.is_ec_consumer = (
-        vllm_config.ec_transfer_config is None
-        or vllm_config.ec_transfer_config.is_ec_consumer
-    )
-    self.is_pooling_model = vllm_config.model_config.runner_type == "pooling"
-
-    self.request_block_hasher = None
-    if vllm_config.cache_config.enable_prefix_caching or kv_connector is not None:
-        caching_hash_fn = core_module.get_hash_fn_by_name(
-            vllm_config.cache_config.prefix_caching_hash_algo
-        )
-        core_module.init_none_hash(caching_hash_fn)
-
-        self.request_block_hasher = core_module.get_request_block_hasher(
-            hash_block_size,
-            caching_hash_fn,
-        )
-
-    self.step_fn = self.step if self.batch_queue is None else self.step_with_batch_queue
-    self.async_scheduling = vllm_config.scheduler_config.async_scheduling
-
-    self.aborts_queue = queue.Queue()
-
-    self._idle_state_callbacks: list[Callable] = []
-
-    # Mark the startup heap as static so that it's ignored by GC.
-    # Reduces pause times of oldest generation collections.
-    core_module.freeze_gc_heap()
-    # If enable, attach GC debugger after static variable freeze.
-    core_module.maybe_attach_gc_debug_callback()
-    # Enable environment variable cache (e.g. assume no more
-    # environment variable overrides after this point)
-    core_module.enable_envs_cache()
 
 
 # Patch reason: AFD FFN daemon engines skip scheduler/KV setup, so upstream
@@ -198,7 +126,7 @@ def __init__(
 # executor for AFD FFN engines while preserving upstream shutdown for non-AFD
 # engines.
 # Signature: matches upstream; no added parameters.
-def shutdown(self):
+def shutdown(self) -> None:
     # ### PATCH START: AFD FFN EngineCore shutdown
     # Stop the connector-driven worker loop before shutting down the executor;
     # scheduler/KV state may not exist for FFN daemon engines.
@@ -213,17 +141,9 @@ def shutdown(self):
         return
     # ### PATCH END: AFD FFN EngineCore shutdown
 
-    core_module.logger.debug_once("[shutdown] EngineCore: tearing down local resources")
-    self.structured_output_manager.clear_backend()
-    if self.model_executor:
-        self.model_executor.shutdown()
-    if self.scheduler:
-        self.scheduler.shutdown()
-    gc.unfreeze()
-    core_module.cleanup_dist_env_and_memory()
-    core_module.logger.debug_once(
-        "[shutdown] EngineCore: local resource teardown complete"
-    )
+    # Delegation exception: target shutdown now also tears down its additional
+    # engine state. Only the AFD FFN path above needs custom cleanup.
+    return _original_engine_core_shutdown(self)
 
 
 # Patch reason: late-loaded AFD FFN EngineCore paths may ask for KV cache setup
@@ -240,110 +160,10 @@ def _initialize_kv_caches(self, vllm_config: VllmConfig) -> KVCacheConfig:
         return _AFDFFNKVCacheConfig()
     # ### PATCH END: AFD FFN late-loaded KV cache bypass
 
-    start = time.time()
-
-    core_module.register_all_kvcache_specs(vllm_config)
-
-    # Get all kv cache needed by the model
-    kv_cache_specs = self.model_executor.get_kv_cache_specs()
-
-    if any(
-        getattr(spec, "non_causal", False)
-        for worker_specs in kv_cache_specs
-        for spec in worker_specs.values()
-    ):
-        if vllm_config.scheduler_config.enable_chunked_prefill:
-            core_module.logger.info(
-                "Disabling chunked prefill: model has non-causal attention layers."
-            )
-            vllm_config.scheduler_config.enable_chunked_prefill = False
-        if vllm_config.cache_config.enable_prefix_caching:
-            core_module.logger.info(
-                "Disabling prefix caching: model has non-causal attention layers."
-            )
-            vllm_config.cache_config.enable_prefix_caching = False
-
-    has_kv_cache = any(kv_cache_spec for kv_cache_spec in kv_cache_specs)
-    if has_kv_cache:
-        if core_module.envs.VLLM_ELASTIC_EP_SCALE_UP_LAUNCH:
-            # NOTE(yongji): should already be set
-            # during _eep_scale_up_before_kv_init
-            assert self.available_gpu_memory_for_kv_cache > 0
-            available_gpu_memory = [self.available_gpu_memory_for_kv_cache] * len(
-                kv_cache_specs
-            )
-        else:
-            # Profiles the peak memory usage of the model to determine how
-            # much memory can be allocated for kv cache.
-            available_gpu_memory = self.model_executor.determine_available_memory()
-            self.available_gpu_memory_for_kv_cache = available_gpu_memory[0]
-    else:
-        # Attention free models don't need memory for kv cache
-        available_gpu_memory = [0] * len(kv_cache_specs)
-
-    assert len(kv_cache_specs) == len(available_gpu_memory)
-
-    # Track max_model_len before KV cache config to detect auto-fit changes
-    max_model_len_before = vllm_config.model_config.max_model_len
-
-    kv_cache_configs = core_module.get_kv_cache_configs(
-        vllm_config, kv_cache_specs, available_gpu_memory
-    )
-
-    # If auto-fit reduced max_model_len, sync the new value to workers.
-    # This is needed because workers were spawned before memory profiling
-    # and have the original (larger) max_model_len cached.
-    max_model_len_after = vllm_config.model_config.max_model_len
-    if max_model_len_after != max_model_len_before:
-        self.collective_rpc("update_max_model_len", args=(max_model_len_after,))
-
-    scheduler_kv_cache_config = core_module.generate_scheduler_kv_cache_config(
-        kv_cache_configs
-    )
-    vllm_config.cache_config.num_gpu_blocks = scheduler_kv_cache_config.num_blocks
-    kv_cache_groups = scheduler_kv_cache_config.kv_cache_groups
-    if kv_cache_groups:
-        vllm_config.cache_config.block_size = min(
-            g.kv_cache_spec.block_size for g in kv_cache_groups
-        )
-        num_tokens, max_concurrency = core_module.get_kv_cache_capacity(
-            vllm_config,
-            scheduler_kv_cache_config,
-        )
-        vllm_config.cache_config.kv_cache_size_tokens = num_tokens
-        vllm_config.cache_config.kv_cache_max_concurrency = max_concurrency
-
-    vllm_config.validate_block_size()
-
-    # Initialize kv cache and warmup the execution
-    self.model_executor.initialize_from_config(kv_cache_configs)
-
-    elapsed = time.time() - start
-    compile_time = vllm_config.compilation_config.compilation_time
-    encoder_compile_time = vllm_config.compilation_config.encoder_compilation_time
-    if encoder_compile_time > 0:
-        core_module.logger.info_once(
-            "init engine (profile, create kv cache, warmup model) took "
-            "%.2f s (compilation: %.2f s — language_model: %.2f s, "
-            "encoder: %.2f s)",
-            elapsed,
-            compile_time + encoder_compile_time,
-            compile_time,
-            encoder_compile_time,
-        )
-    elif compile_time > 0:
-        core_module.logger.info_once(
-            "init engine (profile, create kv cache, warmup model) took "
-            "%.2f s (compilation: %.2f s)",
-            elapsed,
-            compile_time,
-        )
-    else:
-        core_module.logger.info_once(
-            "init engine (profile, create kv cache, warmup model) took %.2f s",
-            elapsed,
-        )
-    return scheduler_kv_cache_config
+    # Delegation exception: the target v0.28 implementation changed KV-cache
+    # capacity updates and warmup ordering. Preserve that exact implementation
+    # for non-FFN engines; this patch owns only the AFD daemon bypass above.
+    return _original_engine_core_kv(self, vllm_config)
 
 
 # Patch reason: AFD FFN ranks must run the connector server loop rather than
@@ -351,7 +171,7 @@ def _initialize_kv_caches(self, vllm_config: VllmConfig) -> KVCacheConfig:
 # Patch functionality: starts and monitors the FFN connector loop for AFD FFN
 # engines while preserving upstream busy loops for non-AFD engine processes.
 # Signature: matches upstream; no added parameters.
-def run_busy_loop(self):
+def run_busy_loop(self) -> None:
     # ### PATCH START: AFD FFN connector busy loop
     # FFN ranks run the connector server loop and poll worker-side failures
     # instead of executing vLLM's normal request scheduling loop.
@@ -360,86 +180,12 @@ def run_busy_loop(self):
         return result
     # ### PATCH END: AFD FFN connector busy loop
 
+    # Delegation exception: vLLM v0.28 added fault-tolerant wrappers, request
+    # count publication, and new elastic-EP state transitions to both native
+    # busy loops. Preserve those target implementations for non-FFN engines.
     if isinstance(self, core_module.DPEngineCoreProc):
-        """Core busy loop of the EngineCore for data parallel case."""
-
-        # Loop until process is sent a SIGINT or SIGTERM
-        while self._handle_shutdown():
-            # 1) Poll the input queue until there is work to do.
-            self._process_input_queue()
-            # Publish request counts before and after GPU step to ensure freshness.
-            self._maybe_publish_request_counts()
-
-            if self.eep_scaling_state is not None:
-                _ = self.eep_scaling_state.progress()
-                if self.eep_scaling_state.is_complete():
-                    if self.eep_scaling_state.worker_type == "removing":
-                        raise SystemExit
-                    self.process_input_queue_block = True
-                    self.eep_scaling_state = None
-
-            executed = self._process_engine_step()
-            self._maybe_publish_request_counts()
-
-            local_unfinished_reqs = self.scheduler.has_unfinished_requests()
-            if not executed:
-                if not local_unfinished_reqs and not self.engines_running:
-                    # All engines are idle.
-                    continue
-
-                # Execute a dummy pass when no ready requests ran, unless the
-                # engine is sleeping.
-                elif not self.model_executor.is_sleeping:
-                    with self.capture_iteration_details(None) as iteration_details:
-                        self.execute_dummy_batch()
-                    if iteration_details is not None and not self.has_coordinator:
-                        stats = self._make_iteration_details_stats(iteration_details)
-                        self.output_queue.put_nowait(
-                            (
-                                0,
-                                core_module.EngineCoreOutputs(
-                                    scheduler_stats=stats,
-                                ),
-                            )
-                        )
-
-            # 3) All-reduce operation to determine global unfinished reqs.
-            self.engines_running = self._has_global_unfinished_reqs(
-                local_unfinished_reqs
-            )
-
-            if not self.engines_running:
-                if self.dp_rank == 0 or not self.has_coordinator:
-                    # Notify client that we are pausing the loop.
-                    core_module.logger.debug(
-                        "Wave %d finished, pausing engine loop.", self.current_wave
-                    )
-                    # In the coordinator case, dp rank 0 sends updates to the
-                    # coordinator. Otherwise (offline spmd case), each rank
-                    # sends the update to its colocated front-end process.
-                    client_index = -1 if self.has_coordinator else 0
-                    self.output_queue.put_nowait(
-                        (
-                            client_index,
-                            core_module.EngineCoreOutputs(
-                                wave_complete=self.current_wave
-                            ),
-                        )
-                    )
-                # Increment wave count and reset step counter.
-                self.current_wave += 1
-                self.step_counter = 0
-
-        raise SystemExit
-
-    """Core busy loop of the EngineCore."""
-    while self._handle_shutdown():
-        # 1) Poll the input queue until there is work to do.
-        self._process_input_queue()
-        # 2) Step the engine core and return the outputs.
-        self._process_engine_step()
-
-    raise SystemExit
+        return _original_dp_engine_core_busy_loop(self)
+    return _original_engine_core_busy_loop(self)
 
 
 class _AFDFFNKVCacheConfig:

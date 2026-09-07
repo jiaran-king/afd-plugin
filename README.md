@@ -16,10 +16,12 @@ tests for GPU and Ascend NPU deployments.
 > This project is still experimental and needs more large-scale testing across
 > different hardware backends.
 
-The target runtime is **vLLM `v0.26.0`**. The plugin does not modify the vLLM
-source tree. AFD behavior is installed through the `vllm.general_plugins` entry
-point, `--additional-config`, automatically selected role workers, plugin-owned
-model wrappers, and narrow version-scoped compatibility shims.
+The CUDA target runtime for this branch is **vLLM `v0.28.0`**. The existing
+Ascend NPU baseline remains vLLM `v0.26.0` and is not covered by this v0.28
+adaptation. The plugin does not modify the vLLM source tree. AFD behavior is
+installed through the `vllm.general_plugins` entry point,
+`--additional-config`, automatically selected role workers, plugin-owned model
+wrappers, and narrow version-scoped compatibility shims.
 
 ## Architecture
 
@@ -61,7 +63,8 @@ Connector implementations are grouped by backend package:
 
 Known gaps:
 
-- vLLM versions other than `0.26.0` are not claimed as supported.
+- The CUDA v0.28 adaptation is pinned to `0.28.0`; the existing NPU baseline is
+  pinned to `0.26.0` until its matching vLLM-Ascend stack is adapted and tested.
 - vLLM/vLLM-Ascend model runner v2 is not supported.
 - GPU and NPU E2E tests are opt-in and require real hardware plus model weights.
 - GPU CUDA graph support is limited to `FULL_DECODE_ONLY`.
@@ -94,7 +97,7 @@ command:
 uv sync --group dev --extra vllm
 ```
 
-The optional extra pins `vllm==0.26.0`.
+The optional extra pins `vllm==0.28.0` for the CUDA target.
 
 ### Ascend NPU installation
 

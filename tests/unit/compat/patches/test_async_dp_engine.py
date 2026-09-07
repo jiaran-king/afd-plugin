@@ -136,6 +136,13 @@ def _install_fake_vllm_engine(monkeypatch: pytest.MonkeyPatch):
         def __init__(self, **kwargs):
             self.kwargs = kwargs
 
+    class CoreEngineLaunch:
+        def __init__(self, engine_manager, coordinator, addresses, tensor_queue):
+            self.engine_manager = engine_manager
+            self.coordinator = coordinator
+            self.addresses = addresses
+            self.tensor_queue = tensor_queue
+
     @contextmanager
     def zmq_socket_ctx(*_args, **_kwargs):
         yield SimpleNamespace()
@@ -160,6 +167,7 @@ def _install_fake_vllm_engine(monkeypatch: pytest.MonkeyPatch):
     utils_module.CoreEngine = CoreEngine
     utils_module.CoreEngineProcManager = CoreEngineProcManager
     utils_module.CoreEngineActorManager = CoreEngineActorManager
+    utils_module.CoreEngineLaunch = CoreEngineLaunch
     utils_module.get_engine_client_zmq_addr = lambda *_args: "handshake"
     utils_module.get_open_port = lambda: 12345
     utils_module.get_open_zmq_ipc_path = lambda: "ipc"
@@ -270,7 +278,8 @@ def test_async_dp_coordinator_disables_wave_coordination(monkeypatch):
         False,
         addresses,
     ) as launch_result:
-        _, coordinator, yielded_addresses, _ = launch_result
+        coordinator = launch_result.coordinator
+        yielded_addresses = launch_result.addresses
         assert coordinator.enable_wave_coordination is False
         assert yielded_addresses is addresses
 

@@ -97,7 +97,7 @@ def _install_fake_vllm_core(monkeypatch: pytest.MonkeyPatch):
     core_module.EngineCoreProc = EngineCoreProc
     core_module.DPEngineCoreProc = DPEngineCoreProc
     core_module.EngineShutdownState = _EngineShutdownState
-    core_module.VLLM_VERSION = "0.26.0"
+    core_module.VLLM_VERSION = "0.28.0"
     core_module.logger = logging.getLogger("fake-vllm-core")
     core_module.logger.info_once = lambda *args, **kwargs: None
     core_module.envs = SimpleNamespace(VLLM_ELASTIC_EP_SCALE_UP_LAUNCH=False)
@@ -234,10 +234,17 @@ def test_engine_core_patch_leaves_non_ffn_path_untouched(monkeypatch):
 
     engine = core_module.EngineCore(_config("attention"), Executor, log_stats=False)
 
-    assert not hasattr(engine, "original_init_called")
-    assert isinstance(engine.model_executor, Executor)
-    assert engine.scheduler is not None
-    assert engine.available_gpu_memory_for_kv_cache == -1
+    # Non-AFD initialization delegates to the target vLLM implementation so
+    # v0.28 fields and lifecycle changes are preserved verbatim.
+    assert engine.original_init_called
+    engine.shutdown()
+    assert engine.original_shutdown_called
+    engine._initialize_kv_caches(_config("attention"))
+    assert engine.original_initialize_kv_caches_called
+
+    process = core_module.EngineCoreProc(_config("attention"), Executor, False)
+    process.run_busy_loop()
+    assert process.original_run_busy_loop_called
 
 
 def test_engine_core_patch_runs_and_stops_ffn_loop(monkeypatch):
