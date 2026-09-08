@@ -7,15 +7,23 @@ This runtime module depends on vLLM's native ubatching stack.
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from contextlib import nullcontext
 from typing import Any
 
 import torch
+import vllm.envs as envs
+from vllm.compilation.cuda_graph import CUDAGraphWrapper
 from vllm.config import CUDAGraphMode, VllmConfig
 from vllm.forward_context import DPMetadata, create_forward_context, get_forward_context
 from vllm.model_executor.offloader.base import get_offloader
-from vllm.v1.worker.gpu_ubatch_wrapper import UbatchMetadata, UBatchWrapper
+from vllm.v1.worker.gpu_ubatch_wrapper import (
+    CUDAGraphMetaData,
+    UbatchMetadata,
+    UBatchWrapper,
+)
+from vllm.v1.worker.ubatch_utils import create_sm_control_context
 from vllm.v1.worker.ubatching import make_ubatch_contexts
 
 from afd_plugin.config import is_afd_active
@@ -25,6 +33,12 @@ from afd_plugin.connectors import AFDDPMetadata, AFDForwardContextMetadata
 class AFDUBatchWrapper(UBatchWrapper):
     """Thin AFD-aware subclass of vLLM's native ``UBatchWrapper``."""
 
+    # Upstream: vllm/v1/worker/gpu_ubatch_wrapper.py
+    # Source SHA: 6b5a12c0f843f10aec5fd5e439a1b8091dd66b8c
+    # Patch reason: the native module-level factory bypasses AFD's old override.
+    # Patch functionality: skip native SM control for AFD and retain its provider.
+    # Signature: matches upstream; no added parameters.
+    # Removal: use an upstream overridable SM-context hook when available.
     def __init__(
         self,
         runnable: Callable,
@@ -32,24 +46,38 @@ class AFDUBatchWrapper(UBatchWrapper):
         runtime_mode: CUDAGraphMode,
         device: torch.cuda.device,
     ):
-        super().__init__(runnable, vllm_config, runtime_mode, device)
+        self.runnable = runnable
+        self.vllm_config = vllm_config
+        self.compilation_config = vllm_config.compilation_config
+        self.comm_stream = torch.cuda.Stream(device=device)
+        # Ubatch threads plus the main thread
+        self.ready_barrier = threading.Barrier(
+            self.vllm_config.parallel_config.num_ubatches + 1
+        )
+
+        self.cudagraphs: dict[int, CUDAGraphMetaData] = {}
+
+        self.cudagraph_wrapper = None
+        if runtime_mode is not CUDAGraphMode.NONE:
+            self.cudagraph_wrapper = CUDAGraphWrapper(
+                runnable, vllm_config, runtime_mode=runtime_mode
+            )
+
+        # ### PATCH START: skip native SM control for AFD.
+        if is_afd_active(vllm_config):
+            self.sm_control = nullcontext()
+        else:
+            self.sm_control = create_sm_control_context(vllm_config.parallel_config)
+        # ### PATCH END: skip native SM control for AFD.
+        self.device = device
+        self.is_debugging_mode = envs.VLLM_LOGGING_LEVEL == "DEBUG"
+        self._runnable_str = str(runnable) if self.is_debugging_mode else None
+        # ### PATCH START: retain AFD context provider.
         self._afd_context_provider: Any | None = None
+        # ### PATCH END: retain AFD context provider.
 
     def configure_afd_context_provider(self, provider: Any) -> None:
         self._afd_context_provider = provider
-
-    # Patch reason: native SM partitioning conflicts with AFD connector work.
-    # Patch functionality: disable native SM partitioning only for active AFD.
-    # Signature: matches upstream; no added parameters.
-    # Upstream: vLLM v0.28.0, vllm/v1/worker/gpu_ubatch_wrapper.py
-    # Commit: 2cf0a6915ce544dc493a0990f2ea38d81601128a
-    @staticmethod
-    def _create_sm_control_context(vllm_config: VllmConfig):
-        # ### PATCH START: leave all SMs visible to AFD compute and communication.
-        if is_afd_active(vllm_config):
-            return nullcontext()
-        # ### PATCH END: leave all SMs visible to AFD compute and communication.
-        return UBatchWrapper._create_sm_control_context(vllm_config)
 
     # Patch reason: native ubatch contexts do not carry AFD transfer metadata.
     # Patch functionality: install per-ubatch AFD context and control-plane
