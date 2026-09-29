@@ -78,6 +78,11 @@ from vllm.distributed.device_communicators.pynccl import PyNcclCommunicator
 from vllm.distributed.utils import StatelessProcessGroup
 from vllm.forward_context import DPMetadata
 from vllm.utils.torch_utils import direct_register_custom_op
+from vllm.v1.worker.ubatching import (
+    dbo_enabled,
+    dbo_switch_to_comm_sync,
+    dbo_yield_and_switch_from_comm_to_compute,
+)
 
 from afd_plugin.config import AFDConfig
 from afd_plugin.connectors.base import (
@@ -385,6 +390,47 @@ class P2pNcclAFDConnector(AFDConnectorBase):
                 self.a2e_group,
                 self.a2e_comm_id,
             )
+
+    def exchange_attn_ffn(
+        self,
+        hidden_states: torch.Tensor,
+        context: AFDTransferContext,
+        *,
+        router_logits: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Exchange one DBO stage without interleaving another stage's send.
+
+        The reply overwrites hidden_states, as in recv_ffn_output's matching
+        reference-buffer path. Keep the entire exchange inside one custom op:
+        compiled producers/consumers must stay on the compute stream, while
+        native ubatch events order the communication stream and CPU yield.
+        """
+        if self.a2e_comm_id is None or self.e2a_comm_id is None:
+            raise RuntimeError("P2P connector is not initialized")
+        if (
+            not torch.compiler.is_compiling()
+            and not context.metadata.validate_tensor_shape(
+                tuple(hidden_states.shape),
+            )
+        ):
+            raise ValueError(
+                f"hidden_states shape {hidden_states.shape!r} does not match "
+                f"AFD metadata token count {context.metadata.total_tokens}",
+            )
+        if (
+            router_logits is not None
+            and router_logits.shape[0] != hidden_states.shape[0]
+        ):
+            raise ValueError(
+                "router_logits and hidden_states must have equal token counts",
+            )
+        torch.ops.vllm.afd_p2p_exchange(
+            hidden_states,
+            router_logits,
+            self.a2e_comm_id,
+            self.e2a_comm_id,
+        )
+        return hidden_states
 
     def recv_ffn_output(
         self,
@@ -973,6 +1019,36 @@ def _register_p2p_custom_ops() -> None:
     ) -> None:
         pass
 
+    def afd_p2p_exchange_impl(
+        hidden_states: torch.Tensor,
+        router_logits: torch.Tensor | None,
+        a2e_comm_id: int,
+        e2a_comm_id: int,
+    ) -> None:
+        # Yielding between send and recv can queue the next stage's blocking
+        # send before this stage's recv. FFN cannot receive that next stage
+        # until its current reply completes (observable with NCCL SHM).
+        # Pair the exchange on the native comm stream, then yield so the peer
+        # ubatch can compute while this exchange is in flight. The native
+        # events protect both the input producer and the output consumer.
+        use_dbo = dbo_enabled()
+        if use_dbo:
+            dbo_switch_to_comm_sync()
+        afd_p2p_send_impl(hidden_states, 0, a2e_comm_id)
+        if router_logits is not None:
+            afd_p2p_send_impl(router_logits, 0, a2e_comm_id)
+        afd_p2p_recv_impl(hidden_states, 0, e2a_comm_id)
+        if use_dbo:
+            dbo_yield_and_switch_from_comm_to_compute()
+
+    def afd_p2p_exchange_fake(
+        hidden_states: torch.Tensor,
+        router_logits: torch.Tensor | None,
+        a2e_comm_id: int,
+        e2a_comm_id: int,
+    ) -> None:
+        pass
+
     def register_one(
         op_name: str,
         op_func: Callable[..., None],
@@ -1003,6 +1079,12 @@ def _register_p2p_custom_ops() -> None:
         op_func=afd_p2p_recv_impl,
         mutates_args=["out"],
         fake_impl=afd_p2p_recv_fake,
+    )
+    register_one(
+        op_name="afd_p2p_exchange",
+        op_func=afd_p2p_exchange_impl,
+        mutates_args=["hidden_states"],
+        fake_impl=afd_p2p_exchange_fake,
     )
     _AFD_CUSTOM_OPS_REGISTERED = True
 

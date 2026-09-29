@@ -144,6 +144,21 @@ class RemoteFFNProxy(nn.Module):
             seq_len=int(hidden_states.shape[0]),
         )
         context = AFDTransferContext(metadata=metadata)
+        # Load the GPU transport only in CUDA workers; NPU proxies retain
+        # their existing send/yield/receive path and payload contract.
+        if native.current_platform.is_cuda():
+            from afd_plugin.connectors.gpu.p2p import P2pNcclAFDConnector
+
+            connector = afd_metadata.connector
+            if (
+                isinstance(connector, P2pNcclAFDConnector)
+                and connector.vllm_config.parallel_config.enable_dbo
+            ):
+                return connector.exchange_attn_ffn(
+                    hidden_states,
+                    context,
+                    **send_kwargs,
+                )
         afd_metadata.connector.send_attn_output(
             hidden_states,
             context,

@@ -551,9 +551,12 @@ def test_p2p_custom_ops_register_send_recv_with_fake_impls(monkeypatch):
     assert [call["op_name"] for call in calls] == [
         "afd_p2p_send",
         "afd_p2p_recv",
+        "afd_p2p_exchange",
     ]
     assert calls[0]["mutates_args"] == ["tensor"]
     assert calls[1]["mutates_args"] == ["out"]
+    assert calls[2]["mutates_args"] == ["hidden_states"]
+    assert calls[2]["fake_impl"](None, None, 0, 1) is None
     assert callable(calls[0]["fake_impl"])
     assert callable(calls[1]["fake_impl"])
 

@@ -45,3 +45,26 @@ small outputs cannot pass merely because of the absolute tolerance. It checks
 MoE semantics independently of the transport test, but does not replace
 DP2/TP4/EP8 E2E or two-stage token-layout tests. A failed or unexecuted probe
 must be reported as such rather than treated as evidence of accuracy.
+
+## GPU P2P DBO exchange regression
+
+On two GPUs inside an allocation, run:
+
+```bash
+NCCL_P2P_DISABLE=1 timeout --signal=TERM --kill-after=30s 180s \
+  torchrun --standalone --nproc-per-node=2 \
+  -m tests.e2e.operators.p2p_dbo_roundtrip
+```
+
+This needs no checkpoint. It runs the actual DeepSeek FFN proxy with native
+vLLM ubatch contexts and two real NCCL communicators. The 2,048 x 2,048 BF16
+payload matches issue #398's profiling exchange. Shared-memory transport
+exposes the send/yield/recv ordering deadlock that NVLink can mask. The check
+uses distinct stage values and router payloads across layers, and validates
+compute producers and output consumers with DBO both disabled and enabled.
+A timeout is a regression failure, not a skip. Keep the outer bound so a GPU
+communication deadlock cannot retain an allocation indefinitely.
+
+Set `ISSUE398_TRACE_DIR` to an existing output directory to additionally save
+short PyTorch CPU/CUDA traces for both ranks. Do not retain
+`NCCL_P2P_DISABLE=1` in production launch settings.
