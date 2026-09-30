@@ -568,7 +568,6 @@ typedef void (*ReleaseHugeMem)(void *, bool);
     auto workspace_status = call(getWorkspaceSizeFunc, converted_params);     \
     TORCH_CHECK(workspace_status == 0,                                        \
                 "call " #aclnn_api " failed, detail:", aclGetRecentErrMsg()); \
-    /* ### PATCH START: Retain queued ACLNN workspace. */                    \
     void *workspace_addr = nullptr;                                           \
     /* Keep workspace alive until the queued handler submits the kernel. */  \
     at::Tensor workspace_tensor;                                              \
@@ -581,7 +580,6 @@ typedef void (*ReleaseHugeMem)(void *, bool);
     }                                                                         \
     auto acl_call = [converted_params, workspace_addr, workspace_size,        \
                      acl_stream, executor, workspace_tensor]() -> int {       \
-      /* ### PATCH END: Retain queued ACLNN workspace. */                    \
       typedef int (*OpApiFunc)(void *, uint64_t, aclOpExecutor *,             \
                                const aclrtStream);                            \
       OpApiFunc opApiFunc = reinterpret_cast<OpApiFunc>(opApiFuncAddr);       \
