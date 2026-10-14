@@ -450,7 +450,6 @@ def _args() -> argparse.Namespace:
         ffn_vllm_arg=[],
         gsm8k_output_path="/tmp/gsm8k-results",
         completion_output_path="/tmp/dsv4-completions.json",
-        use_v2_model_runner=False,
     )
 
 
@@ -500,38 +499,37 @@ def test_parse_args_rejects_legacy_fixed_scenario_options(monkeypatch, legacy_ar
 @pytest.mark.parametrize(
     ("scenario", "expected"),
     [
-        ("baseline-graph", (True, True, False, 4, 0, 1, 1, 1, False)),
-        ("afd-eager-2a1f", (False, False, False, 2, 1, 1, 1, 1, False)),
-        ("afd-graph-2a1f", (False, True, False, 2, 1, 1, 1, 1, False)),
-        ("afd-graph-dbo-2a1f", (False, True, True, 2, 1, 1, 1, 1, False)),
-        ("afd-eager-2a2f", (False, False, False, 2, 2, 1, 1, 1, False)),
-        ("afd-graph-2a2f", (False, True, False, 2, 2, 1, 1, 1, False)),
-        ("afd-graph-dbo-2a2f", (False, True, True, 2, 2, 1, 1, 1, False)),
-        ("afd-eager-async-cam", (False, False, False, 2, 2, 1, 2, 1, False)),
-        ("afd-async-ubatch", (False, False, False, 2, 1, 1, 2, 1, False)),
-        (runner.DSV4_ASYNC_CAM_SCENARIO, (False, False, False, 8, 8, 1, 4, 1, False)),
+        ("baseline-graph", (True, True, False, 4, 0, 1, 1, 1)),
+        ("afd-eager-2a1f", (False, False, False, 2, 1, 1, 1, 1)),
+        ("afd-graph-2a1f", (False, True, False, 2, 1, 1, 1, 1)),
+        ("afd-graph-dbo-2a1f", (False, True, True, 2, 1, 1, 1, 1)),
+        ("afd-eager-2a2f", (False, False, False, 2, 2, 1, 1, 1)),
+        ("afd-graph-2a2f", (False, True, False, 2, 2, 1, 1, 1)),
+        ("afd-graph-dbo-2a2f", (False, True, True, 2, 2, 1, 1, 1)),
+        ("afd-eager-async-cam", (False, False, False, 2, 2, 1, 2, 1)),
+        ("afd-async-ubatch", (False, False, False, 2, 1, 1, 2, 1)),
+        (runner.DSV4_ASYNC_CAM_SCENARIO, (False, False, False, 8, 8, 1, 4, 1)),
         (
             dsv4_config.DSV4_SYNC_CAMP2P_A5_SCENARIO,
             # The A5 profile runs Attention DP2/TP1 and FFN DP2/TP1 with ACL
             # graph capture like its launch script, but without that script's
             # native DBO, whose split path is the current suspect for the A5 DSA
             # attention operator tiling failure.
-            (False, True, False, 2, 2, 1, 1, 1, False),
+            (False, True, False, 2, 2, 1, 1, 1),
         ),
         (
             dsv4_config.DSV4_SYNC_CAMP2P_A3_SCENARIO,
             # Sixteen dies: Attention DP2/TP4 and FFN DP8/TP1 with expert
             # parallelism, the shape its recorded deployment uses. It runs on
-            # NPU like the asynchronous case, so it keeps the v1 model runner:
-            # ModelRunnerV2 is CUDA-only.
-            (False, False, False, 8, 8, 1, 4, 1, False),
+            # NPU like the asynchronous case, so its runner choice is retained.
+            (False, False, False, 8, 8, 1, 4, 1),
         ),
-        ("afd-v2-eager-1a1f", (False, False, False, 1, 1, 1, 1, 1, True)),
-        ("afd-v2-eager-dp2", (False, False, False, 2, 2, 1, 1, 1, True)),
-        ("afd-v2-eager-tp2", (False, False, False, 2, 2, 1, 2, 2, True)),
-        ("afd-v2-graph-1a1f", (False, True, False, 1, 1, 1, 1, 1, True)),
-        ("afd-v2-graph-dp2", (False, True, False, 2, 2, 1, 1, 1, True)),
-        ("afd-v2-graph-tp2", (False, True, False, 2, 2, 1, 2, 2, True)),
+        ("afd-v2-eager-1a1f", (False, False, False, 1, 1, 1, 1, 1)),
+        ("afd-v2-eager-dp2", (False, False, False, 2, 2, 1, 1, 1)),
+        ("afd-v2-eager-tp2", (False, False, False, 2, 2, 1, 2, 2)),
+        ("afd-v2-graph-1a1f", (False, True, False, 1, 1, 1, 1, 1)),
+        ("afd-v2-graph-dp2", (False, True, False, 2, 2, 1, 1, 1)),
+        ("afd-v2-graph-tp2", (False, True, False, 2, 2, 1, 2, 2)),
     ],
 )
 def test_configure_scenario_overwrites_fixed_topology_and_features(
@@ -540,6 +538,12 @@ def test_configure_scenario_overwrites_fixed_topology_and_features(
 ):
     args = _args()
     args.scenario = scenario
+    if scenario in (
+        runner.ASYNC_CAM_SCENARIO,
+        runner.ASYNC_UBATCH_SCENARIO,
+        *runner.DSV4_SCENARIOS,
+    ):
+        args.device_backend = "npu"
     args.num_attention_ranks = 99
     args.num_ffn_ranks = 99
     args.tp_size = 99
@@ -557,7 +561,6 @@ def test_configure_scenario_overwrites_fixed_topology_and_features(
         args.tp_size,
         args.attention_tp_size,
         args.ffn_tp_size,
-        args.use_v2_model_runner,
     ) == expected
     # A scenario that carries its own launch profile (the DSV4 synchronous
     # cases) uses that profile's graph setting instead of the default.
@@ -668,13 +671,11 @@ def test_v2_scenarios_build_exact_commands(
         assert ("--compilation-config" in command) is uses_graph
         assert ("--enable-dbo" in command) is ("-dbo-" in scenario)
         assert "--max-num-batched-tokens" not in command
-        assert "--no-enable-prefix-caching" in command
+        assert "--no-enable-prefix-caching" not in command
         assert "--no-enable-chunked-prefill" not in command
-        assert "--no-async-scheduling" in command
+        assert "--no-async-scheduling" not in command
+        assert "--worker-extension-cls" not in command
         if scenario in runner.V2_DBO_COMPARISON_SCENARIOS:
-            assert command[command.index("--worker-extension-cls") + 1] == (
-                "tests.e2e.mrv2_evidence.Worker"
-            )
             assert command[command.index("--max-num-seqs") + 1] == "8"
         if "-dbo-" in scenario:
             assert command[command.index("--dbo-decode-token-threshold") + 1] == "2"
@@ -689,22 +690,32 @@ def test_v2_scenarios_build_exact_commands(
 
 
 @pytest.mark.parametrize(
-    ("field", "value", "error_message"),
+    ("field", "value"),
     [
-        ("afd_async", True, "synchronous AFD"),
-        ("compute_gate_on_attention", True, "compute_gate_on_attention=false"),
-        ("afd_connector", "OtherConnector", "P2pNcclAFDConnector"),
-        ("afd_connector_extra_config", ['{"mode":"unsupported"}'], "extra config"),
-        ("use_decode_bench_connector", True, "decode-bench connector"),
+        ("afd_async", True),
+        ("compute_gate_on_attention", True),
+        ("afd_connector", "OtherConnector"),
+        ("afd_connector_extra_config", ['{"mode":"configured"}']),
+        ("use_decode_bench_connector", True),
     ],
 )
-def test_v2_scenarios_reject_unsupported_options(field, value, error_message):
+def test_gpu_scenarios_leave_connector_contract_validation_to_runtime(field, value):
     args = _args()
     args.scenario = "afd-v2-eager-1a1f"
     setattr(args, field, value)
 
-    with pytest.raises(ValueError, match=error_message):
-        runner.configure_scenario(args)
+    runner.configure_scenario(args)
+    command = runner.build_vllm_command(args, role="attention")
+    config = json.loads(command[command.index("--additional-config") + 1])["afd"]
+    if field == "use_decode_bench_connector":
+        assert "--kv-transfer-config" in command
+    elif field == "afd_connector_extra_config":
+        assert config["connector_extra_config"] == {"mode": "configured"}
+    else:
+        config_field = {"afd_async": "async", "afd_connector": "connector"}.get(
+            field, field
+        )
+        assert config[config_field] == value
 
 
 def test_v2_scenarios_reject_npu_backend():
@@ -728,6 +739,7 @@ def test_build_baseline_command_uses_native_dp4_graph_server():
     assert command[command.index("--data-parallel-size") + 1] == "4"
     assert command[command.index("--tensor-parallel-size") + 1] == "1"
     assert "--enable-expert-parallel" in command
+    assert "--worker-extension-cls" not in command
     assert json.loads(command[command.index("--compilation-config") + 1]) == {
         "cudagraph_mode": "FULL_DECODE_ONLY",
     }
@@ -1707,9 +1719,13 @@ def test_build_env_marks_managed_process_trees_by_role():
 
 @pytest.mark.parametrize(
     ("scenario", "expected"),
-    [("afd-eager-2a1f", "0"), ("afd-v2-eager-1a1f", "1")],
+    [
+        ("baseline-graph", "1"),
+        ("afd-eager-2a1f", "1"),
+        ("afd-v2-eager-1a1f", "1"),
+    ],
 )
-def test_runner_selects_gpu_model_runner_from_scenario(
+def test_runner_always_selects_gpu_model_runner_v2(
     monkeypatch,
     scenario,
     expected,
@@ -1722,6 +1738,91 @@ def test_runner_selects_gpu_model_runner_from_scenario(
     env = runner.build_env("0,1", args, role="attention")
 
     assert env["VLLM_USE_V2_MODEL_RUNNER"] == expected
+
+
+@pytest.mark.parametrize(
+    ("suite", "scenario"),
+    [
+        pytest.param(suite, scenario, id=f"{name}-{scenario}")
+        for name, suite in (
+            ("deepseek-v2-lite", deepseek_v2_lite_e2e),
+            ("qwen3-moe", qwen3_moe_e2e),
+            ("qwen3-6", qwen3_6_e2e),
+        )
+        for scenario in suite.SCENARIOS
+    ],
+)
+def test_every_gpu_model_case_uses_v2_without_worker_extension(
+    monkeypatch, tmp_path, suite, scenario
+):
+    monkeypatch.setenv("AFD_E2E_BACKEND", "gpu")
+    monkeypatch.setenv("AFD_GPU_E2E_MODEL", "model")
+    monkeypatch.delenv("AFD_E2E_DEVICES", raising=False)
+    command = suite.build_runner_command(scenario, tmp_path)
+    monkeypatch.setattr(sys, "argv", ["runner", *command[3:]])
+    args = runner.parse_args()
+    runner.configure_scenario(args)
+    runner.validate_topology(
+        args,
+        runner.parse_csv(args.attention_devices),
+        runner.parse_csv(args.ffn_devices),
+    )
+    for role in ("baseline",) if args.baseline else ("attention", "ffn"):
+        service_command = (
+            runner.build_baseline_command(args)
+            if role == "baseline"
+            else runner.build_vllm_command(args, role=role)
+        )
+        assert "--worker-extension-cls" not in service_command
+        assert runner.build_env("0", args, role=role)["VLLM_USE_V2_MODEL_RUNNER"] == "1"
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    ["baseline-graph", "afd-eager-2a2f", "afd-graph-2a1f", "afd-graph-dbo-2a2f"],
+)
+def test_npu_shared_cases_keep_their_runner_and_commands(scenario):
+    args = _args()
+    args.scenario = scenario
+    args.device_backend = "npu"
+    runner.configure_scenario(args)
+    command = (
+        runner.build_baseline_command(args)
+        if args.baseline
+        else runner.build_vllm_command(args, role="attention")
+    )
+    assert runner.build_env("0", args)["VLLM_USE_V2_MODEL_RUNNER"] == "0"
+    assert "--worker-extension-cls" not in command
+
+
+@pytest.mark.parametrize(
+    "common_args",
+    [
+        [],
+        ["--enable-prefix-caching", "--async-scheduling", "--enable-chunked-prefill"],
+        [
+            "--no-enable-prefix-caching",
+            "--no-async-scheduling",
+            "--no-enable-chunked-prefill",
+        ],
+    ],
+)
+@pytest.mark.parametrize("scenario", ["afd-eager-2a1f", "afd-v2-graph-dbo-dp2"])
+def test_gpu_execution_preserves_native_runtime_option_choices(common_args, scenario):
+    args = _args()
+    args.scenario = scenario
+    args.common_vllm_arg = common_args.copy()
+    runner.configure_scenario(args)
+    command = runner.build_vllm_command(args, role="attention")
+    for option in (
+        "--enable-prefix-caching",
+        "--no-enable-prefix-caching",
+        "--async-scheduling",
+        "--no-async-scheduling",
+        "--enable-chunked-prefill",
+        "--no-enable-chunked-prefill",
+    ):
+        assert command.count(option) == common_args.count(option)
 
 
 @pytest.mark.parametrize(
@@ -1882,76 +1983,3 @@ def test_v2_dbo_comparison_uses_identical_evaluation(monkeypatch, scenario):
     assert calls[0]["limit"] == 128
     assert calls[0]["num_concurrent"] == 12
     assert calls[0]["num_fewshot"] == 8
-
-
-@pytest.mark.parametrize("graph", [False, True])
-def test_mrv2_dbo_evidence_requires_live_matching_execution(graph):
-    args = _args()
-    args.scenario = "afd-v2-graph-dbo-dp2" if graph else "afd-v2-eager-dbo-dp2"
-    runner.configure_scenario(args)
-    mode = "FULL" if graph else "eager"
-    ffn_mode = "replay" if graph else "eager"
-    attention = (
-        f"AFD execution: runner=MRV2 phase=live mode={mode} stages=2 "
-        "tokens=[4, 4] real_tokens=[4, 2] count=2"
-    )
-    ffn = (
-        f"AFD execution: runner=FFN mode={ffn_mode} stages=2 "
-        "layout=[[0,[4,4]],[1,[4,4]]] count=128"
-    )
-    events = [
-        (timestamp, role, f"(Worker_DP{rank}_EP{rank} pid={rank + 100}) {line}")
-        for timestamp, role, line in (
-            (101.0, "attention", attention),
-            (102.0, "ffn", ffn),
-        )
-        for rank in range(2)
-    ]
-    events = [
-        (ts, role, line.replace("count=2", "count=1"))
-        for ts, role, line in events
-        if role == "attention"
-    ] + events
-    runner.assert_mrv2_dbo_execution(events, 100.0, args)
-    for missing_role in ("attention", "ffn"):
-        for missing_rank in range(2):
-            with pytest.raises(RuntimeError, match="all expected ranks"):
-                runner.assert_mrv2_dbo_execution(
-                    [
-                        (ts, role, line)
-                        for ts, role, line in events
-                        if not (
-                            role == missing_role and f"Worker_DP{missing_rank}_" in line
-                        )
-                    ],
-                    100.0,
-                    args,
-                )
-    # Reject capture/profile work, empty second stages, and mismatched FFN work.
-    replacements = [
-        ("phase=live", "phase=dummy"),
-        ("phase=live", "phase=profile"),
-        ("real_tokens=[4, 2]", "real_tokens=[4, 0]"),
-        ("[4,4]", "[3,3]"),
-    ]
-    if graph:
-        replacements.append(("mode=FULL", "mode=eager"))
-    for old, new in replacements:
-        with pytest.raises(RuntimeError, match="lacks live two-stage"):
-            runner.assert_mrv2_dbo_execution(
-                [(ts, role, line.replace(old, new)) for ts, role, line in events],
-                100.0,
-                args,
-            )
-    with pytest.raises(RuntimeError, match="lacks live two-stage"):
-        runner.assert_mrv2_dbo_execution(events, 103.0, args)
-    if graph:
-        with pytest.raises(RuntimeError, match="consecutive replays"):
-            runner.assert_mrv2_dbo_execution(
-                [
-                    (ts, role, line.replace("count=2", "count=3"))
-                    for ts, role, line in events
-                ],
-                100.0,
-                args,
-            )

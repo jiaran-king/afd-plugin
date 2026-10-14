@@ -3,25 +3,30 @@
 These tests validate DeepSeek-V2-Lite on real GPU or Ascend NPU hardware,
 Qwen3 MoE on real GPU hardware, and Qwen3.6 MoE through the Qwen3.5/3.6
 adapter family on real CUDA hardware.
-Each default gate runs four scenarios:
+The DeepSeek-V2-Lite GPU gate runs seven scenarios: `baseline-graph`,
+`afd-v2-eager-dp2`, `afd-v2-graph-dp2`, `afd-v2-eager-tp2`,
+`afd-v2-graph-tp2`, `afd-v2-eager-dbo-dp2`, and `afd-v2-graph-dbo-dp2`.
+The V2 DP2 cases replace the duplicate GPU `afd-eager-2a2f`,
+`afd-graph-2a2f`, and `afd-graph-dbo-2a2f` cases. NPU retains those three
+2A2F cases plus `baseline-graph`. Qwen3 MoE and Qwen3.6 MoE retain four
+GPU gate cases: baseline and AFD eager, graph, and graph+DBO on 2A1F.
 
-- `baseline-graph`
-- `afd-eager-2a2f` (DeepSeek-V2-Lite gate only; Qwen3 MoE/Qwen3.6 use `afd-eager-2a1f`)
-- `afd-graph-2a2f` (DeepSeek-V2-Lite gate only; Qwen3 MoE/Qwen3.6 use `afd-graph-2a1f`)
-- `afd-graph-dbo-2a2f` (DeepSeek-V2-Lite gate only; Qwen3 MoE/Qwen3.6 use `afd-graph-dbo-2a1f`)
+Ordinary cases evaluate the first 7 GSM8K samples; DBO cases have a
+24-sample minimum and 12 concurrent requests. The GPU DP2 eager/eager-DBO/
+graph-DBO comparison retains 128 samples, concurrency 12 and the 0.27
+accuracy threshold. GPU cases check accuracy, service liveness and cleanup
+without test worker extensions or per-step execution telemetry. NPU DBO
+retains its live split check (see the accuracy gate in
+`docs/design/module/e2e_testing.md`). If `AFD_E2E_DEVICES` is set, that value
+is used as-is; otherwise the defaults are:
 
-Each scenario evaluates the first 7 GSM8K samples; the DBO scenarios run 24
-samples with 12 concurrent requests so that live requests actually execute
-as two ubatches (see the accuracy gate in
-`docs/design/module/e2e_testing.md`). If `AFD_E2E_DEVICES` is set,
-that value is used as-is; otherwise the defaults are:
-
-- `0,1,2,3` for the gate scenarios. The 2A2F AFD cases (DeepSeek-V2-Lite gate
-  only) use the first two for Attention DP2/TP1 and the last two for FFN
-  DP2/TP1/EP2; `baseline-graph` uses all four for DP4/TP1/EP4.
+- `0,1,2,3` for the gate scenarios. DeepSeek DP2 cases use the first two for
+  Attention DP2/TP1 and the last two for FFN DP2/TP1/EP2. GPU TP2 cases use
+  DP1/TP2 on both roles. `baseline-graph` uses all four for DP4/TP1/EP4.
 - The 2A1F cases use the first two for Attention and the third for FFN,
-  leaving the fourth device idle. For DeepSeek-V2-Lite these are local-only
-  cases; for Qwen3 MoE and Qwen3.6 MoE they are the suite's gate scenarios.
+  leaving the fourth device idle. DeepSeek-V2-Lite eager/graph are local-only;
+  its graph+DBO case is selected by weekly CI. For Qwen3 MoE and Qwen3.6 MoE,
+  all three are suite gate scenarios.
 
 Tests run sequentially and must not skip. Every GSM8K evaluation uses 8
 few-shot examples and a 4096-token maximum model length.
@@ -63,7 +68,17 @@ export AFD_E2E_BACKEND=npu
 Then run the selected model suite:
 
 ```bash
-# DeepSeek-V2-Lite gate scenarios
+# DeepSeek-V2-Lite GPU gate (AFD_E2E_BACKEND=gpu)
+python -m pytest -q -s \
+  "tests/e2e/models/deepseek_v2_lite/test_deepseek_v2_lite.py::test_deepseek_v2_lite[baseline-graph]" \
+  "tests/e2e/models/deepseek_v2_lite/test_deepseek_v2_lite.py::test_deepseek_v2_lite[afd-v2-eager-dp2]" \
+  "tests/e2e/models/deepseek_v2_lite/test_deepseek_v2_lite.py::test_deepseek_v2_lite[afd-v2-graph-dp2]" \
+  "tests/e2e/models/deepseek_v2_lite/test_deepseek_v2_lite.py::test_deepseek_v2_lite[afd-v2-eager-tp2]" \
+  "tests/e2e/models/deepseek_v2_lite/test_deepseek_v2_lite.py::test_deepseek_v2_lite[afd-v2-graph-tp2]" \
+  "tests/e2e/models/deepseek_v2_lite/test_deepseek_v2_lite.py::test_deepseek_v2_lite[afd-v2-eager-dbo-dp2]" \
+  "tests/e2e/models/deepseek_v2_lite/test_deepseek_v2_lite.py::test_deepseek_v2_lite[afd-v2-graph-dbo-dp2]"
+
+# DeepSeek-V2-Lite NPU gate (AFD_E2E_BACKEND=npu)
 python -m pytest -q -s \
   "tests/e2e/models/deepseek_v2_lite/test_deepseek_v2_lite.py::test_deepseek_v2_lite[baseline-graph]" \
   "tests/e2e/models/deepseek_v2_lite/test_deepseek_v2_lite.py::test_deepseek_v2_lite[afd-eager-2a2f]" \
@@ -82,24 +97,33 @@ python -m pytest -q -s \
   tests/e2e/models/qwen3_6/test_qwen3_6.py
 ```
 
-Success means 4 passed and 0 skipped.
+Success means seven GPU DeepSeek gate cases, or four cases for the NPU
+DeepSeek gate or either GPU Qwen suite, passed with zero skips.
+Running the entire DeepSeek module also selects
+local cases: 12 on GPU, seven on NPU.
 
-The repository CUDA E2E evidence for the Qwen3.5/3.6 adapter family uses
-`Qwen/Qwen3.6-35B-A3B`, vLLM V1, and the
-`P2pNcclAFDConnector` on CUDA. Every scenario passes `--language-model-only`;
+The Qwen3.5/3.6 adapter-family suite uses `Qwen/Qwen3.6-35B-A3B` and
+`P2pNcclAFDConnector` on CUDA. The runner now selects native ModelRunnerV2
+for every GPU scenario, including the baseline; FFN remains connector-driven.
+Earlier V1 hardware records retain their original scope. The Qwen hybrid
+DBO adaptation has H20 real-model Graph + DBO and six-cell recurrent-state/
+CUDA Graph parity evidence on the pinned vLLM runtime.
+Every scenario passes `--language-model-only`;
 multimodal execution is not covered. `baseline-graph` uses native DP4/TP1/EP4
 on four devices. The three AFD scenarios use synchronous 2A1F: Attention on
 the first two devices and FFN on the third. The fourth device remains unused
-by AFD scenarios. The suite uses the same GSM8K-7, eight-shot, 4096-token,
-0.27 minimum exact-match gate as the other default suites. NPU, multimodal,
+by AFD scenarios. The suite uses eight-shot GSM8K with a 4096-token model
+length and a 0.27 minimum exact-match gate: seven samples for baseline,
+eager, and graph, and the existing 24-sample minimum for graph + DBO. NPU, multimodal,
 `compute_gate_on_attention=true`, pipeline-parallel, asynchronous, and
 multi-node execution are not covered; quantization is unverified.
 
-### DeepSeek-V2-Lite local 2A1F cases
+### DeepSeek-V2-Lite 2A1F cases
 
-The DeepSeek-V2-Lite 2A1F scenarios are local-only; its CI gate selects the
-2A2F scenarios. They use the first two devices for Attention DP2/TP1 and the
-third for FFN DP1/TP1/EP1, and run GSM8K-7.
+The DeepSeek-V2-Lite ready/merge gate selects 2A2F; weekly CI also runs
+2A1F Graph + DBO. The 2A1F eager/graph cases remain local-only. They use the
+first two devices for Attention DP2/TP1 and the third for FFN DP1/TP1/EP1,
+and evaluate seven GSM8K samples, with the existing 24-sample minimum for DBO.
 
 ```bash
 python -m pytest -q -s \
@@ -108,7 +132,7 @@ python -m pytest -q -s \
   "tests/e2e/models/deepseek_v2_lite/test_deepseek_v2_lite.py::test_deepseek_v2_lite[afd-graph-dbo-2a1f]"
 ```
 
-### GPU ModelRunnerV2 evidence matrix
+### GPU ModelRunnerV2 scenarios
 
 The GPU-only ModelRunnerV2 regression matrix contains eight representative
 scenarios:
@@ -120,8 +144,8 @@ scenarios:
 
 The 1A1F scenarios use two devices and are local-only. DP2 and TP2 use four
 devices, split evenly between Attention and FFN. CI selects those four cases
-and the two DP2 DBO cases on `l4_4`. These rows record hardware-tested coverage; they are not a production
-topology allowlist. Other valid DP/TP topologies use the same AFD and native
+and the two DP2 DBO cases, plus the native baseline, on `l4_4`. These rows are
+regression scenarios, not a production topology allowlist. Other valid DP/TP topologies use the same AFD and native
 vLLM topology contracts.
 
 ```bash
@@ -135,28 +159,32 @@ python -m pytest -q -s \
 The `afd-v2-eager-dbo-dp2` and `afd-v2-graph-dbo-dp2` scenarios cover
 the eager and graph DBO paths. Together with `afd-v2-eager-dp2`, these use the same
 2A2F DP2/TP1 topology, 128 GSM8K samples, 12 concurrent requests, eight-shot
-prompts, `max_num_seqs=8`, and `max_num_batched_tokens=4096`. Prefix caching,
-chunked prefill, and async scheduling are disabled in all three. Only DBO
+prompts, and `max_num_seqs=8`. The native token budget, prefix caching,
+chunked-prefill and async-scheduling defaults and caller choices are preserved. Only DBO
 and graph mode change; the graph row uses `FULL_DECODE_ONLY` with capture size 8.
 `AFD_GSM8K_LIMIT` overrides the sample count consistently across the three rows
 (with a shared minimum of 24 for diagnostics).
 
-The GPU validator accepts exactly two microbatches and requires Attention
-DP > 1; FFN remains connector-driven. These generic MRV2 scenarios remain
-CUDA-only. NPU MRV2 accepts eager two-ubatch DBO (CAMP2P with Attention DP > 1;
-Async CAM also at DP1), but needs separate NPU model qualification. The
-runner requires live two-stage execution and matching layouts on all
-Attention/FFN ranks, plus consecutive FULL replays on the graph row. MRV1
-`afd-graph-dbo-*` scenarios do not substitute for these checks.
+The GPU validator accepts exactly two microbatches at Attention DP1 or
+DP > 1; FFN remains connector-driven. The DP1 path has H20 DeepSeek-V2-Lite
+DP1/TP2 Graph + DBO validation with 128 GSM8K samples, recorded in
+[PR #454](https://github.com/vllm-project/afd-plugin/pull/454).
+NPU retains the separate eager DBO and graph
+constraints documented in the [execution-platform matrix](../../docs/design/module/execution_platforms.md#tested-runtime-matrix).
+The current GPU harness does not collect per-rank two-stage or FULL-replay
+evidence. Historical hardware records retain the execution assertions of the
+test revision that produced them. The `afd-graph-dbo-2a1f` case also selects
+GPU V2 with a different topology and workload.
+These generic MRV2 scenarios remain CUDA-only. NPU native DBO needs separate
+model qualification; Async CAM enables it only on Attention.
 Representative 300-question results and their limits are recorded in
 [PR #425](https://github.com/vllm-project/afd-plugin/pull/425); these comparisons
 do not establish numerical equivalence or full-dataset qualification.
 
 ### Weekly GSM8K
 
-The weekly pipeline runs the Qwen3 MoE and Qwen3.6 MoE suites (baseline,
-eager, and graph scenarios; the DBO scenario is excluded pending the FFN
-CUDA fault investigation from build 68) plus the DeepSeek-V2-Lite
+The weekly pipeline runs all four scenarios in each Qwen3 MoE and Qwen3.6
+MoE suite (baseline, eager, graph, and graph+DBO), plus the DeepSeek-V2-Lite
 `afd-graph-dbo-2a1f` scenario, all with the default GSM8K sample limit. To
 reproduce locally:
 
@@ -169,8 +197,8 @@ python -m pytest -q -s tests/e2e/models/qwen3_6/test_qwen3_6.py
 ```
 
 For a full 1319-sample run, export `AFD_GSM8K_LIMIT=all` before invoking
-pytest. Without `AFD_GSM8K_LIMIT`, each scenario evaluates the first 7
-samples.
+pytest. Without `AFD_GSM8K_LIMIT`, these scenarios evaluate the first 7
+samples, with the existing 24-sample floor for DBO.
 
 ## DSV4 Flash async CAM concurrent requests (local, 16 NPUs)
 

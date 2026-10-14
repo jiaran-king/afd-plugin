@@ -8,7 +8,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import signal
 import subprocess
 import sys
@@ -17,7 +16,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from tests.e2e.accuracy.gsm8k import (
     _extract_gsm8k_accuracy,
@@ -54,7 +53,6 @@ ASYNC_UBATCH_FFN_RANKS = 1
 ASYNC_UBATCH_ATTENTION_TP_SIZE = 2
 ASYNC_UBATCH_NUM_STAGES = 2
 ASYNC_UBATCH_BATCH_SIZE = 2
-V2_SYNC_CONNECTOR = "P2pNcclAFDConnector"
 # Graph capture default for the scenarios that do not carry their own launch
 # profile; the DSV4 synchronous profiles override it.
 DEFAULT_CUDAGRAPH_CAPTURE_SIZE = 8
@@ -148,8 +146,7 @@ def main() -> int:
     processes_by_role: dict[str, subprocess.Popen[str]] = {}
     log_threads: list[threading.Thread] = []
     dbo_split_steps: list[float] = []
-    mrv2_execution_events: list[tuple[float, str, str]] = []
-    dbo_eval_started_at: float | None = None
+    eval_started_at: float | None = None
     handled_signals = (signal.SIGTERM, signal.SIGINT)
     previous_handlers = {signum: signal.getsignal(signum) for signum in handled_signals}
     received_signal: int | None = None
@@ -209,31 +206,21 @@ def main() -> int:
             )
             processes.append(process)
             processes_by_role[role] = process
-            log_threads.append(
-                stream_output(role, process, dbo_split_steps, mrv2_execution_events)
-            )
+            log_threads.append(stream_output(role, process, dbo_split_steps))
             ensure_alive(process, f"{label} process exited during startup")
 
         wait_for_openai_api(args, processes)
         ensure_processes_alive(processes)
 
+        eval_started_at = time.time()
         if args.scenario == ASYNC_CAM_SCENARIO:
             run_completion_evaluation(args)
         elif args.scenario in DSV4_SCENARIOS:
             run_concurrent_completion_evaluation(args)
         else:
-            if args.enable_dbo:
-                dbo_eval_started_at = time.time()
             run_gsm8k_evaluation(args)
-        if args.enable_dbo:
-            if args.use_v2_model_runner:
-                assert_mrv2_dbo_execution(
-                    mrv2_execution_events, cast(float, dbo_eval_started_at), args
-                )
-            else:
-                assert_dbo_live_split_coverage(
-                    dbo_split_steps, dbo_eval_started_at, args
-                )
+        if args.enable_dbo and args.device_backend == "npu":
+            assert_dbo_live_split_coverage(dbo_split_steps, eval_started_at, args)
 
         ensure_processes_alive(processes)
     finally:
@@ -516,26 +503,6 @@ def configure_scenario(args: argparse.Namespace) -> None:
         args.ffn_tp_size = active_sync_profile.ffn_tp_size
     else:
         args.ffn_tp_size = 1
-    args.use_v2_model_runner = args.scenario in V2_SCENARIOS
-    if args.use_v2_model_runner:
-        if args.afd_async or args.afd_connector == ASYNC_AFD_CONNECTOR:
-            raise ValueError("ModelRunnerV2 E2E scenarios require synchronous AFD")
-        if args.compute_gate_on_attention:
-            raise ValueError(
-                "ModelRunnerV2 E2E scenarios require compute_gate_on_attention=false",
-            )
-        if args.afd_connector not in (None, V2_SYNC_CONNECTOR):
-            raise ValueError(
-                "ModelRunnerV2 E2E scenarios require P2pNcclAFDConnector",
-            )
-        if args.afd_connector_extra_config:
-            raise ValueError(
-                "ModelRunnerV2 E2E scenarios do not support connector extra config",
-            )
-        if args.use_decode_bench_connector:
-            raise ValueError(
-                "ModelRunnerV2 E2E scenarios do not support decode-bench connector",
-            )
     if not is_async_cam and not is_dsv4 and args.gsm8k_output_path is None:
         raise ValueError("--gsm8k-output-path is required for GSM8K scenarios")
     if is_async_cam:
@@ -623,7 +590,7 @@ def validate_topology(
         if role_tp_size(args, "attention") != 1:
             raise ValueError("baseline E2E requires Attention TP=1")
         return
-    if args.use_v2_model_runner and args.device_backend != "gpu":
+    if args.scenario in V2_SCENARIOS and args.device_backend != "gpu":
         raise ValueError("ModelRunnerV2 E2E scenarios require GPU")
     if (
         args.scenario in (ASYNC_CAM_SCENARIO, ASYNC_UBATCH_SCENARIO)
@@ -761,15 +728,6 @@ def build_vllm_command(
             json.dumps(afd_config, separators=(",", ":")),
         ],
     )
-    if args.scenario in V2_DBO_COMPARISON_SCENARIOS:
-        cmd.extend(["--worker-extension-cls", "tests.e2e.mrv2_evidence.Worker"])
-    if args.use_v2_model_runner:
-        cmd.extend(
-            [
-                "--no-enable-prefix-caching",
-                "--no-async-scheduling",
-            ],
-        )
     if args.scenario in V2_DBO_COMPARISON_SCENARIOS:
         # Keep request concurrency identical across the no-DBO, eager DBO
         # and graph DBO comparison; retain native chunked-prefill defaults.
@@ -994,86 +952,6 @@ def assert_dbo_live_split_coverage(
     )
 
 
-def assert_mrv2_dbo_execution(
-    events: list[tuple[float, str, str]],
-    eval_started_at: float,
-    args: argparse.Namespace,
-) -> None:
-    """Require all-rank layout coverage in the window, not exact step pairing."""
-    attention_mode = "FULL" if args.cuda_graph_full_decode_only else "eager"
-    ffn_mode = "replay" if args.cuda_graph_full_decode_only else "eager"
-    attention_layouts: dict[
-        tuple[tuple[int, tuple[int, ...]], ...], set[tuple[int, int]]
-    ] = {}
-    previous_attention: dict[
-        tuple[int, int], tuple[int, tuple[tuple[int, tuple[int, ...]], ...]]
-    ] = {}
-    ffn_layouts: dict[
-        tuple[tuple[int, tuple[int, ...]], ...], set[tuple[int, int]]
-    ] = {}
-    for received_at, role, line in events:
-        if received_at < eval_started_at:
-            continue
-        worker = re.search(r"\(Worker_([^ ]+) pid=\d+\)", line)
-        if worker is None:
-            continue
-        ranks = dict(re.findall(r"(DP|TP)(\d+)", worker[1]))
-        rank = (int(ranks["DP"]), int(ranks.get("TP", "0")))
-        if role == "attention" and (
-            f"runner=MRV2 phase=live mode={attention_mode} stages=2 " in line
-        ):
-            real_match = re.search(r"real_tokens=(\[[^]]+\])", line)
-            tokens_match = re.search(r"\btokens=(\[[^]]+\])", line)
-            count_match = re.search(r"count=(\d+)", line)
-            if real_match is None or tokens_match is None or count_match is None:
-                continue
-            if not all(count > 0 for count in json.loads(real_match[1])):
-                continue
-            tokens = json.loads(tokens_match[1])
-            layout = tuple(
-                (stage, (count,) * args.num_attention_ranks)
-                for stage, count in enumerate(tokens)
-            )
-            count = int(count_match[1])
-            previous = previous_attention.get(rank)
-            previous_attention[rank] = (count, layout)
-            if args.cuda_graph_full_decode_only and previous != (count - 1, layout):
-                continue
-            attention_layouts.setdefault(layout, set()).add(rank)
-        if role == "ffn" and f"runner=FFN mode={ffn_mode} stages=2 " in line:
-            layout_match = re.search(r"layout=(\[.*\]) count=", line)
-            if layout_match is not None:
-                layout = tuple(
-                    (stage, tuple(counts))
-                    for stage, counts in json.loads(layout_match[1])
-                )
-                ffn_layouts.setdefault(layout, set()).add(rank)
-    expected_attention = {
-        (dp, tp)
-        for dp in range(args.num_attention_ranks // args.attention_tp_size)
-        for tp in range(args.attention_tp_size)
-    }
-    expected_ffn = {
-        (dp, tp)
-        for dp in range(args.num_ffn_ranks // args.ffn_tp_size)
-        for tp in range(args.ffn_tp_size)
-    }
-    if any(
-        expected_attention <= ranks and expected_ffn <= ffn_layouts.get(layout, set())
-        for layout, ranks in attention_layouts.items()
-    ):
-        print(
-            f"[dbo-coverage] MRV2 live two-stage {attention_mode} and FFN "
-            f"{ffn_mode} confirmed on all expected ranks with matching DP layouts"
-        )
-        return
-    raise RuntimeError(
-        f"MRV2 DBO lacks live two-stage {attention_mode} and matching FFN "
-        f"{ffn_mode} evidence in the evaluation window; FULL requires "
-        "all expected ranks, consecutive replays and two non-empty microbatches"
-    )
-
-
 def run_completion_evaluation(args: argparse.Namespace) -> None:
     """Send the async CAM smoke request and require one returned choice."""
     payload = json.dumps(
@@ -1136,9 +1014,7 @@ def build_env(
     env = os.environ.copy()
     env.setdefault("VLLM_ENGINE_READY_TIMEOUT_S", "18000")
     env[visible_devices_env_name(args.device_backend)] = visible_devices
-    env["VLLM_USE_V2_MODEL_RUNNER"] = (
-        "1" if args.device_backend == "gpu" and args.use_v2_model_runner else "0"
-    )
+    env["VLLM_USE_V2_MODEL_RUNNER"] = "1" if args.device_backend == "gpu" else "0"
     if args.baseline:
         env["VLLM_PLUGINS"] = "ascend" if args.device_backend == "npu" else ""
     else:
@@ -1184,14 +1060,11 @@ def stream_output(
     name: str,
     process: subprocess.Popen[str],
     dbo_split_steps: list[float] | None = None,
-    mrv2_execution_events: list[tuple[float, str, str]] | None = None,
 ) -> threading.Thread:
     def worker() -> None:
         assert process.stdout is not None
         for line in process.stdout:
             print(f"[{name}] {line}", end="")
-            if mrv2_execution_events is not None and "AFD execution: " in line:
-                mrv2_execution_events.append((time.time(), name, line))
             if (
                 dbo_split_steps is not None
                 and name == "attention"

@@ -16,12 +16,17 @@ from typing import TYPE_CHECKING, Any
 
 import vllm.config.vllm as config_module
 import vllm.engine.arg_utils as arg_utils_module
+from vllm import envs
+from vllm.config import CUDAGraphMode
 
 from afd_plugin.compat.vllm import (
     is_target_vllm_compatible as _is_target_vllm_compatible,
 )
 from afd_plugin.config import parse_optional_afd_config
-from afd_plugin.validation import afd_worker_qualname_for_platform_default
+from afd_plugin.validation import (
+    GPU_MRV2_NUM_UBATCHES,
+    afd_worker_qualname_for_platform_default,
+)
 
 if TYPE_CHECKING:
     from vllm.config import VllmConfig
@@ -230,6 +235,113 @@ def _should_relax_vllm_config_backend(vllm_config: VllmConfig) -> bool:
     }
 
 
+def _supports_afd_qwen_dbo(vllm_config: VllmConfig) -> bool:
+    """Recognize the existing registered Qwen CUDA text-only paired deployment."""
+    afd_config = parse_optional_afd_config(vllm_config)
+    if afd_config is None:
+        return False
+    from vllm.platforms import current_platform
+
+    if not current_platform.is_cuda():
+        return False
+    model_config = vllm_config.model_config
+    if model_config is None or model_config.multimodal_config is None:
+        return False
+    mm_config = model_config.multimodal_config
+    if not mm_config.language_model_only or mm_config.enable_mm_embeds:
+        return False
+    if (
+        afd_config.connector != "P2pNcclAFDConnector"
+        or afd_config.async_dp
+        or afd_config.compute_gate_on_attention
+        or afd_config.role not in {"attention", "ffn"}
+    ):
+        return False
+    parallel = vllm_config.parallel_config
+    configured_ranks = (
+        afd_config.num_attention_ranks
+        if afd_config.role == "attention"
+        else afd_config.num_ffn_ranks
+    )
+    if (
+        configured_ranks != parallel.data_parallel_size * parallel.tensor_parallel_size
+        or not parallel.enable_expert_parallel
+        or parallel.enable_elastic_ep
+        or parallel.enable_eplb
+        or parallel.use_sequence_parallel_moe
+        or vllm_config.compilation_config.pass_config.enable_sp
+        or parallel.num_ubatches != GPU_MRV2_NUM_UBATCHES
+    ):
+        return False
+    # Initial VllmConfig admission precedes worker initialization. Resolve the
+    # same registration transformation the AFD worker will use, without changing
+    # the config's truthful multimodal/hybrid properties.
+    from afd_plugin.model_executor.models.model_utils import get_afd_model_config
+
+    afd_model_config = get_afd_model_config(model_config, device_type="cuda")
+    return afd_model_config.hf_config.architectures == [
+        "AFDQwen3_5MoeForConditionalGeneration"
+    ]
+
+
+# Patch reason: native V2 excludes every hybrid/MM model from DBO, including the
+# registered AFD Qwen text-only lane that supplies its own native ModelState hook.
+# Patch functionality: exempt only that lane's MM/hybrid exclusions; retain every
+# other exact upstream exclusion and all surrounding V2 validation, including
+# mamba-cache-mode all. The FFN role is the same paired connector deployment.
+# Signature: matches VllmConfig._get_dbo_unsupported_features; no new parameters.
+# Upstream: vllm/config/vllm.py, VllmConfig._get_dbo_unsupported_features;
+# ced6857afa0ea7b2e3f0846a62e1394e90f15607 (vLLM 0.30.0).
+# Removal plan: remove when upstream supports text-only Qwen hybrid DBO.
+def _get_dbo_unsupported_features(self) -> list[str]:
+    """Collect what the V2 model runner cannot combine with DBO.
+
+    The V2 runner microbatches a plain decoder forward pass. Anything that
+    slices or replays the batch differently (drafting, adapters, pipeline
+    stages, context parallelism, encoders) is not handled yet.
+    """
+    # TODO: DBO with model runner V2 is under development.
+    # It should be enabled with explicit VLLM_USE_V2_MODEL_RUNNER environ.
+    # Remove it when stable.
+    if envs.VLLM_USE_V2_MODEL_RUNNER is None:
+        return ["dual batch overlap"]
+
+    unsupported: list[str] = []
+    model_config = self.model_config
+    parallel_config = self.parallel_config
+
+    if self.lora_config is not None:
+        unsupported.append("dual batch overlap with LoRA")
+    if self.speculative_config is not None:
+        unsupported.append("dual batch overlap with speculative decoding")
+    if parallel_config.pipeline_parallel_size > 1:
+        unsupported.append("dual batch overlap with pipeline parallelism")
+    if (
+        parallel_config.decode_context_parallel_size > 1
+        or parallel_config.prefill_context_parallel_size > 1
+    ):
+        unsupported.append("dual batch overlap with context parallelism")
+    # ### PATCH START: admit only the implemented AFD text-only Qwen pair.
+    afd_qwen_dbo = _supports_afd_qwen_dbo(self)
+    if model_config is not None and (
+        (model_config.is_multimodal_model and not afd_qwen_dbo)
+        or model_config.is_encoder_decoder
+    ):
+        unsupported.append("dual batch overlap with multimodal models")
+    # ### PATCH END: admit only the implemented AFD text-only Qwen pair.
+    # ### PATCH START: private Qwen ModelState supplies hybrid DBO metadata.
+    if model_config is not None and model_config.is_hybrid and not afd_qwen_dbo:
+        unsupported.append("dual batch overlap with hybrid models")
+    # ### PATCH END: private Qwen ModelState supplies hybrid DBO metadata.
+    if self.compilation_config.cudagraph_mode == CUDAGraphMode.PIECEWISE:
+        # DBO captures FULL graphs only.
+        unsupported.append("dual batch overlap with PIECEWISE CUDA graphs")
+    if self.is_mm_encoder_only:
+        unsupported.append("dual batch overlap with encoder only models")
+
+    return unsupported
+
+
 if _is_target_vllm_compatible():
     if not hasattr(arg_utils_module, _ORIGINAL_CREATE_ENGINE_CONFIG_ATTR):
         setattr(
@@ -256,6 +368,9 @@ if _is_target_vllm_compatible():
 
     arg_utils_module.EngineArgs.create_engine_config = create_engine_config
     config_module.VllmConfig.__post_init__ = __post_init__
+    config_module.VllmConfig._get_dbo_unsupported_features = (
+        _get_dbo_unsupported_features
+    )
     arg_utils_module.logger.debug("AFD config validation patch applied")
 
 

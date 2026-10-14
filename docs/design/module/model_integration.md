@@ -10,7 +10,7 @@ primary_code_paths:
 related_code_paths:
   - "afd_plugin/connectors/metadata.py"
   - "afd_plugin/v1/worker/dbo.py"
-  - "afd_plugin/v1/worker/{attention_metadata,attention_model_runner,attention_model_runner_v2,ffn_model_runner}.py"
+  - "afd_plugin/v1/worker/{attention_metadata,attention_model_runner_v2,ffn_model_runner}.py"
 depends_on:
   - "plugin_boundary.md"
   - "connector_contracts.md"
@@ -192,9 +192,12 @@ This path is CUDA-only, text-only, and requires `--language-model-only`,
 `compute_gate_on_attention=false`, and `pipeline_parallel_size=1`. It rejects
 multimodal execution, sequence-parallel MoE, EPLB, speculative decoding, and
 LoRA before language-model construction; NPU model-config resolution fails
-before model loading. Attention-side router transport, DBO, DP/EP/PP, async
-communication, multi-node, quantization, and performance are outside this
-adapter's current contract.
+before model loading. Native V2 DBO uses the private Qwen GDN model-state
+adapter; H20 real-model Graph + DBO and six-cell recurrent-state/CUDA
+Graph parity checks pass on the pinned runtime. The current
+2A1F suite keeps static EP and PP1. Attention-side router transport, async
+communication, multi-node, quantization, and performance remain outside the
+validated scope.
 
 ## Forward-context contract
 
@@ -206,7 +209,7 @@ stage/request/token slicing, stage count, optional transaction ID, and a live
 connector reference.
 
 Native forward-context creation can bypass an AFD model-runner call site:
-V1 dummy runs do so, while V2 creates its context inside native
+Ascend V1 dummy runs do so, while V2 creates its context inside native
 `execute_model()`. During those scopes, `use_afd_metadata_provider()`
 temporarily wraps `vllm.forward_context.create_forward_context`, lets the
 runner install the same `additional_kwargs` entry, and restores the original

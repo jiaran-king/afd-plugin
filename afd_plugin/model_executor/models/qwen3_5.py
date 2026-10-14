@@ -3,7 +3,7 @@
 """Qwen3.5/3.6 MoE AFD wrapper for the native vLLM lifecycle."""
 
 from collections.abc import Iterable, Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 import torch.nn as nn
@@ -13,6 +13,9 @@ from vllm.model_executor.models import qwen3_next as next_native
 
 from afd_plugin.config import parse_optional_afd_config
 from afd_plugin.model_executor.models.deepseek_v2 import AFDAttentionFusedMoE
+
+if TYPE_CHECKING:
+    from afd_plugin.v1.worker.qwen_gdn_model_state import QwenGDNModelState
 
 _ATTENTION_ROLE = frozenset(("attention",))
 _FFN_ROLE = frozenset(("ffn",))
@@ -535,6 +538,14 @@ class AFDQwen3_5MoeForConditionalGeneration(  # noqa: N801
 
     def get_experts_layer_indices(self) -> tuple[int, ...]:
         return self.language_model.get_experts_layer_indices()
+
+    @staticmethod
+    def get_model_state_cls() -> type["QwenGDNModelState"]:
+        # Native ModelRunnerV2 extension point; keep GPU runtime imports lazy
+        # until this worker selects its state implementation.
+        from afd_plugin.v1.worker.qwen_gdn_model_state import QwenGDNModelState
+
+        return QwenGDNModelState
 
     # Patch reason: native loading allocates every Qwen checkpoint path locally.
     # Patch functionality: filter checkpoint paths to the owning AFD role.
