@@ -12,7 +12,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -674,7 +674,9 @@ def test_v2_scenarios_build_exact_commands(
         assert "--no-enable-prefix-caching" not in command
         assert "--no-enable-chunked-prefill" not in command
         assert "--no-async-scheduling" not in command
-        assert "--worker-extension-cls" not in command
+        assert ("--worker-extension-cls" in command) is (
+            uses_graph or "-dbo-" in scenario
+        )
         if scenario in runner.V2_DBO_COMPARISON_SCENARIOS:
             assert command[command.index("--max-num-seqs") + 1] == "8"
         if "-dbo-" in scenario:
@@ -1752,7 +1754,7 @@ def test_runner_always_selects_gpu_model_runner_v2(
         for scenario in suite.SCENARIOS
     ],
 )
-def test_every_gpu_model_case_uses_v2_without_worker_extension(
+def test_every_gpu_model_case_uses_v2_with_scoped_feature_evidence(
     monkeypatch, tmp_path, suite, scenario
 ):
     monkeypatch.setenv("AFD_E2E_BACKEND", "gpu")
@@ -1773,8 +1775,16 @@ def test_every_gpu_model_case_uses_v2_without_worker_extension(
             if role == "baseline"
             else runner.build_vllm_command(args, role=role)
         )
-        assert "--worker-extension-cls" not in service_command
-        assert runner.build_env("0", args, role=role)["VLLM_USE_V2_MODEL_RUNNER"] == "1"
+        expected_probe = runner.needs_gpu_execution_evidence(args)
+        assert ("--worker-extension-cls" in service_command) is expected_probe
+        if expected_probe:
+            assert service_command[
+                service_command.index("--worker-extension-cls") + 1
+            ] == ("tests.e2e.mrv2_evidence.Worker")
+        env = runner.build_env("0", args, role=role)
+        assert env["VLLM_USE_V2_MODEL_RUNNER"] == "1"
+        if expected_probe:
+            assert env["VLLM_SERVER_DEV_MODE"] == "1"
 
 
 @pytest.mark.parametrize(
@@ -1823,6 +1833,282 @@ def test_gpu_execution_preserves_native_runtime_option_choices(common_args, scen
         "--no-enable-chunked-prefill",
     ):
         assert command.count(option) == common_args.count(option)
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        "afd-graph-2a1f",
+        "afd-v2-eager-dbo-dp2",
+        "afd-v2-graph-dbo-dp2",
+        "afd-v2-graph-tp2",
+    ],
+)
+def test_gpu_feature_evidence_requires_every_rank_and_requested_execution(scenario):
+    args = _args()
+    args.scenario = scenario
+    runner.configure_scenario(args)
+    layout = [[stage, [4] * 2] for stage in range(2)]
+    layouts = json.dumps({"two_stage": [layout], "consecutive_graph": [layout]})
+    evidence = [
+        (
+            role,
+            f"{runner.GPU_EVIDENCE_PREFIX}dp_rank={dp} tp_rank={tp} "
+            "graph_replays=2 two_stage_steps=2 two_stage_graph_replays=2 "
+            f"layouts={layouts}",
+        )
+        for role, ranks in (
+            ("attention", args.num_attention_ranks),
+            ("ffn", args.num_ffn_ranks),
+        )
+        for dp in range(ranks // runner.role_tp_size(args, role))
+        for tp in range(runner.role_tp_size(args, role))
+    ]
+    runner.assert_gpu_execution_evidence(evidence, args)
+    with pytest.raises(RuntimeError, match="lacks live"):
+        runner.assert_gpu_execution_evidence(evidence[:-1], args)
+    eager_only = [
+        (role, line.replace("graph_replays=2", "graph_replays=0"))
+        for role, line in evidence
+    ]
+    if args.cuda_graph_full_decode_only:
+        with pytest.raises(RuntimeError, match="lacks live"):
+            runner.assert_gpu_execution_evidence(eager_only, args)
+    else:
+        runner.assert_gpu_execution_evidence(eager_only, args)
+    unsplit = [
+        (
+            role,
+            line.replace("two_stage_steps=2", "two_stage_steps=0").replace(
+                "two_stage_graph_replays=2", "two_stage_graph_replays=0"
+            ),
+        )
+        for role, line in evidence
+    ]
+    if args.enable_dbo:
+        with pytest.raises(RuntimeError, match="lacks live"):
+            runner.assert_gpu_execution_evidence(unsplit, args)
+
+
+@pytest.mark.parametrize("graph", [False, True])
+def test_gpu_dbo_requires_matching_layout_on_every_rank(graph):
+    args = _args()
+    args.scenario = "afd-v2-graph-dbo-dp2" if graph else "afd-v2-eager-dbo-dp2"
+    runner.configure_scenario(args)
+    layout = [[0, [4, 4]], [1, [4, 4]]]
+    key = "consecutive_graph" if graph else "two_stage"
+
+    def summary(dp, layout):
+        return (
+            f"{runner.GPU_EVIDENCE_PREFIX}dp_rank={dp} tp_rank=0 "
+            "graph_replays=2 two_stage_steps=2 two_stage_graph_replays=2 "
+            f"layouts={json.dumps({key: [layout]})}"
+        )
+
+    evidence = [
+        (role, summary(dp, layout)) for role in ("attention", "ffn") for dp in range(2)
+    ]
+    runner.assert_gpu_execution_evidence(evidence, args)
+    for changed_ranks in ((0,), (0, 1)):
+        mismatched = [
+            (role, summary(dp, [[0, [3, 3]], [1, [3, 3]]]))
+            if role == "ffn" and dp in changed_ranks
+            else (role, line)
+            for (role, line), dp in zip(evidence, (0, 1, 0, 1), strict=True)
+        ]
+        with pytest.raises(RuntimeError, match="matching two-stage layouts"):
+            runner.assert_gpu_execution_evidence(mismatched, args)
+    if graph:
+        total_replays_without_consecutive_pair = [
+            (role, line.replace(json.dumps({key: [layout]}), json.dumps({key: []})))
+            for role, line in evidence
+        ]
+        with pytest.raises(RuntimeError, match="consecutive graph replays"):
+            runner.assert_gpu_execution_evidence(
+                total_replays_without_consecutive_pair, args
+            )
+
+
+def test_gpu_evidence_rpc_uses_attention_without_ffn_http(monkeypatch):
+    args = _args()
+    calls = []
+
+    def urlopen(request, timeout):
+        calls.append((request.full_url, json.loads(request.data), timeout))
+        return io.BytesIO(b'{"results":[null]}')
+
+    monkeypatch.setattr(runner.urllib.request, "urlopen", urlopen)
+    for method in ("afd_reset_execution_evidence", "afd_log_execution_evidence"):
+        runner.gpu_execution_evidence_rpc(args, method)
+    assert [(url, body["method"]) for url, body, _ in calls] == [
+        ("http://127.0.0.1:18100/collective_rpc", method)
+        for method in ("afd_reset_execution_evidence", "afd_log_execution_evidence")
+    ]
+    assert all(
+        body["timeout"] == timeout == runner.GPU_EVIDENCE_RPC_TIMEOUT_S
+        for _, body, timeout in calls
+    )
+
+
+@pytest.mark.parametrize("scenario", ["afd-v2-graph-1a1f", "afd-v2-eager-dbo-dp2"])
+def test_gpu_evidence_readiness_requires_only_attention_api(monkeypatch, scenario):
+    args = _args()
+    args.scenario = scenario
+    args.startup_timeout = 30
+    runner.configure_scenario(args)
+    calls = []
+
+    class Response(io.BytesIO):
+        status = 200
+
+    def urlopen(url, timeout):
+        calls.append(url)
+        assert url == "http://127.0.0.1:18100/v1/models"
+        return Response()
+
+    monkeypatch.setattr(runner.urllib.request, "urlopen", urlopen)
+    runner.wait_for_openai_api(args, [])
+    assert calls == ["http://127.0.0.1:18100/v1/models"]
+
+
+def test_gpu_summary_wait_requires_unique_ranks_and_checks_liveness(monkeypatch):
+    args = _args()
+    args.scenario = "afd-v2-eager-dbo-dp2"
+    runner.configure_scenario(args)
+    evidence = [
+        (role, f"{runner.GPU_EVIDENCE_PREFIX}dp_rank={dp} tp_rank=0")
+        for role, dp in (("attention", 0), ("attention", 0), ("ffn", 0), ("ffn", 1))
+    ]
+    checks = []
+    sleeps = []
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        evidence.append(
+            ("attention", f"{runner.GPU_EVIDENCE_PREFIX}dp_rank=1 tp_rank=0")
+        )
+
+    monkeypatch.setattr(runner, "ensure_processes_alive", lambda _: checks.append(1))
+    monkeypatch.setattr(runner.time, "sleep", sleep)
+    runner.wait_for_gpu_execution_summaries(evidence, args, [])
+    assert len(checks) == 2 and sleeps == [runner.PROCESS_POLL_INTERVAL_S]
+
+
+@pytest.mark.parametrize("failure", ["timeout", "process-exit"])
+def test_gpu_summary_wait_is_bounded_and_preserves_process_failure(
+    monkeypatch, failure
+):
+    args = _args()
+    args.scenario = "afd-v2-graph-1a1f"
+    runner.configure_scenario(args)
+    ticks = iter((0, runner.GPU_EVIDENCE_RPC_TIMEOUT_S))
+    monkeypatch.setattr(runner.time, "monotonic", lambda: next(ticks))
+    process = argparse.Namespace(args=["vllm"], poll=lambda: 1)
+    with pytest.raises(RuntimeError):
+        runner.wait_for_gpu_execution_summaries(
+            [],
+            args,
+            [cast(subprocess.Popen[str], process)] if failure == "process-exit" else [],
+        )
+
+
+def test_stream_output_collects_bounded_gpu_summaries(capsys):
+    line = (
+        f"{runner.GPU_EVIDENCE_PREFIX}dp_rank=0 tp_rank=0 "
+        "graph_replays=2 two_stage_steps=2 two_stage_graph_replays=2\n"
+    )
+    process = argparse.Namespace(stdout=io.StringIO("ordinary log\n" + line))
+    evidence: list[tuple[str, str]] = []
+    thread = runner.stream_output(
+        "attention",
+        cast(subprocess.Popen[str], process),
+        gpu_execution_evidence=evidence,
+    )
+    thread.join()
+    assert evidence == [("attention", line.strip())]
+    assert "ordinary log" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("failure", [None, "reset", "missing-summary"])
+def test_gpu_evidence_window_and_failure_cleanup(monkeypatch, capsys, failure):
+    args = _args()
+    args.scenario = "afd-v2-graph-1a1f"
+    args.attention_devices, args.ffn_devices = "0", "1"
+    process = argparse.Namespace(poll=lambda: None)
+    events = []
+    markers = []
+    native_build_env = runner.build_env
+
+    def build_env(*args, **kwargs):
+        env = native_build_env(*args, **kwargs)
+        marker = Path(env["AFD_E2E_GPU_EVIDENCE_START"])
+        assert not marker.exists()
+        markers.append(marker)
+        return env
+
+    class LogThread:
+        def __init__(self, role, evidence):
+            self.role, self.evidence = role, evidence
+
+        def join(self, timeout):
+            events.append(f"joined-{self.role}")
+            assert markers[0].parent.exists()
+
+    def evidence_rpc(_args, method):
+        events.append(method)
+        assert markers[0].exists() == (method == "afd_log_execution_evidence")
+        if failure == "reset" and method == "afd_reset_execution_evidence":
+            raise RuntimeError("RPC reset failed")
+
+    def evaluate(_args):
+        assert markers[0] == markers[1] and markers[0].exists()
+        events.append("evaluate")
+
+    def terminate(*_args, **_kwargs):
+        assert markers[0].parent.exists()
+        events.append("cleanup")
+
+    def wait_summaries(evidence, _args, _processes):
+        assert markers[0].with_name("evaluation-complete").exists()
+        events.append("summaries")
+        if failure == "missing-summary":
+            raise RuntimeError("GPU ffn lacks live execution summaries")
+        evidence.extend(
+            (
+                role,
+                f"{runner.GPU_EVIDENCE_PREFIX}dp_rank=0 tp_rank=0 "
+                "graph_replays=1 two_stage_steps=0 two_stage_graph_replays=0",
+            )
+            for role in ("attention", "ffn")
+        )
+
+    monkeypatch.setattr(runner, "parse_args", lambda: args)
+    monkeypatch.setattr(runner, "build_env", build_env)
+    monkeypatch.setattr(runner, "start_process", lambda *_args: process)
+    monkeypatch.setattr(
+        runner,
+        "stream_output",
+        lambda role, _process, _splits, evidence: LogThread(role, evidence),
+    )
+    monkeypatch.setattr(
+        runner, "wait_for_openai_api", lambda *_args: events.append("ready")
+    )
+    monkeypatch.setattr(runner, "run_gsm8k_evaluation", evaluate)
+    monkeypatch.setattr(runner, "gpu_execution_evidence_rpc", evidence_rpc)
+    monkeypatch.setattr(runner, "wait_for_gpu_execution_summaries", wait_summaries)
+    monkeypatch.setattr(runner, "terminate_processes", terminate)
+    if failure is None:
+        assert runner.main() == 0
+        assert "E2E SCENARIO" in capsys.readouterr().out
+    else:
+        with pytest.raises(RuntimeError, match="RPC reset failed|lacks live"):
+            runner.main()
+        assert "E2E SCENARIO" not in capsys.readouterr().out
+    assert events[0:2] == ["ready", "afd_reset_execution_evidence"]
+    assert events[-3:] == ["cleanup", "joined-ffn", "joined-attention"]
+    assert not markers[0].parent.exists()
+    if failure != "reset":
+        assert events[2:5] == ["evaluate", "afd_log_execution_evidence", "summaries"]
 
 
 @pytest.mark.parametrize(

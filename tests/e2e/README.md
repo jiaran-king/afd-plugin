@@ -11,11 +11,42 @@ The V2 DP2 cases replace the duplicate GPU `afd-eager-2a2f`,
 2A2F cases plus `baseline-graph`. Qwen3 MoE and Qwen3.6 MoE retain four
 GPU gate cases: baseline and AFD eager, graph, and graph+DBO on 2A1F.
 
+The full GPU model suite collects 20 cases, down from 23 before GPU V1
+retirement. The three removed cases have retained counterparts with the same
+2A2F DP2/TP1 topology and execution mode:
+
+| Removed GPU case | Retained GPU case |
+| --- | --- |
+| `afd-eager-2a2f` | `afd-v2-eager-dp2` |
+| `afd-graph-2a2f` | `afd-v2-graph-dp2` |
+| `afd-graph-dbo-2a2f` | `afd-v2-graph-dbo-dp2` |
+
+DeepSeek retains 12 cases; Qwen3 MoE and Qwen3.6 MoE retain four each.
+Baseline, 1A1F, 2A1F, DP2, TP2, eager, graph and DBO scenario coverage remains.
+This preserves functional coverage on V2; it does not retain the retired V1
+implementation. Workloads are not identical: the retained DP2 eager/DBO
+comparison already uses 128 samples instead of the removed eager case's
+seven or graph+DBO case's 24-sample minimum. Ready/merge CI keeps the baseline
+and six V2 cases; weekly CI also includes both Qwen graph+DBO cases.
+
 Ordinary cases evaluate the first 7 GSM8K samples; DBO cases have a
 24-sample minimum and 12 concurrent requests. The GPU DP2 eager/eager-DBO/
 graph-DBO comparison retains 128 samples, concurrency 12 and the 0.27
-accuracy threshold. GPU cases check accuracy, service liveness and cleanup
-without test worker extensions or per-step execution telemetry. NPU DBO
+accuracy threshold. GPU cases check accuracy, service liveness and cleanup.
+AFD GPU graph/DBO cases also load a test-only worker extension: after readiness
+the harness resets Attention counters through native collective RPC, then creates
+a shared marker to arm FFN at its next call entry. Attention reports through RPC
+after evaluation; a completion marker requests FFN summaries through its existing
+periodic worker health RPC. The harness waits for every rank while checking
+service liveness, with a 30-second limit, before teardown.
+The marker is removed after process cleanup. FFN does not service HTTP utilities.
+Every Attention/FFN rank must report
+the requested replay or two-stage execution. DBO requires matching A/F layouts;
+graph+DBO requires consecutive completed two-stage replays of the same layout.
+Dummy/profile/capture work and empty second microbatches do not qualify.
+There is no per-step logging or runner-class
+identity check. Pure eager and native baseline cases do not load this extension;
+performance comparisons must omit it. NPU DBO
 retains its live split check (see the accuracy gate in
 `docs/design/module/e2e_testing.md`). If `AFD_E2E_DEVICES` is set, that value
 is used as-is; otherwise the defaults are:
@@ -171,9 +202,15 @@ DP1/TP2 Graph + DBO validation with 128 GSM8K samples, recorded in
 [PR #454](https://github.com/vllm-project/afd-plugin/pull/454).
 NPU retains the separate eager DBO and graph
 constraints documented in the [execution-platform matrix](../../docs/design/module/execution_platforms.md#tested-runtime-matrix).
-The current GPU harness does not collect per-rank two-stage or FULL-replay
-evidence. Historical hardware records retain the execution assertions of the
-test revision that produced them. The `afd-graph-dbo-2a1f` case also selects
+The GPU harness collects bounded per-rank summaries of actual two-stage and
+FULL-replay execution during evaluation. Historical hardware records retain
+the execution assertions of the test revision that produced them. The restored
+summary-based probe was revalidated on four H20s on 2026-10-14 (SLURM 5299):
+eager+DBO passed at 40/128 (0.3125) and graph+DBO at 42/128 (0.328125).
+Every Attention/FFN DP2/TP1 rank reported completed two-stage execution; the
+graph case also confirmed matching A/F layouts and consecutive same-layout
+replays. This targeted validation is not a fresh run of all 20 GPU scenarios.
+The `afd-graph-dbo-2a1f` case also selects
 GPU V2 with a different topology and workload.
 These generic MRV2 scenarios remain CUDA-only. NPU native DBO needs separate
 model qualification; Async CAM enables it only on Attention.

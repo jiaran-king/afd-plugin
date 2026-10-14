@@ -224,8 +224,20 @@ of 24; the lower threshold applies only at sample counts up to 24.
   floor the sample count at 24: a sequential client never satisfies the
   DP-wide split agreement, so live requests would never run as two ubatches
   and only warmup/capture would exercise the split path. The NPU gate asserts
-  that at least one live two-ubatch step was recorded; GPU cases retain the
-  concurrent workload without collecting execution telemetry.
+  that at least one live two-ubatch step was recorded. GPU AFD graph/DBO cases
+  use a test-only worker extension. After readiness, native collective RPC resets
+  Attention counters and a shared marker arms FFN at its next call entry.
+  Attention emits its summary through RPC after evaluation; a completion marker
+  requests FFN summaries through its existing periodic worker health RPC. The
+  harness waits up to 30 seconds for every rank while checking service liveness
+  before teardown. It removes the markers after process cleanup; FFN does not
+  service HTTP utilities. Every
+  Attention/FFN rank must execute the requested feature. DBO requires matching
+  two-stage A/F layouts; graph+DBO requires consecutive completed replays of
+  the same layout.
+  Dummy/profile/capture work and empty second microbatches do not qualify.
+  Pure eager and native baseline cases do not load the extension;
+  performance comparisons omit it. There is no per-step execution logging.
   `AFD_GSM8K_LIMIT=all` still bypasses the floor. On vLLM 0.30 the runner sets the DBO decode token
   threshold to 2 because upstream validates both DBO thresholds against the
   two-microbatch count; the prefill threshold stays at 8. `AFD_E2E_API_PORT_BASE`

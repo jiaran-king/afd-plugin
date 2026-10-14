@@ -30,8 +30,19 @@ Ordinary cases evaluate the first 7 GSM8K samples, with the existing
 24-sample minimum for DBO. GPU `afd-v2-eager-dp2`, `afd-v2-eager-dbo-dp2`
 and `afd-v2-graph-dbo-dp2` retain 128 samples, concurrency 12,
 `max_num_seqs=8` and the 0.27 accuracy threshold. GPU cases check accuracy,
-service liveness and cleanup without test worker extensions or per-step
-runner/graph-replay telemetry. NPU DBO retains its existing live split check.
+service liveness and cleanup. AFD GPU graph/DBO cases also use a test-only
+worker extension: after readiness, native collective RPC resets Attention
+counters and a shared marker arms FFN at its next call entry. Attention reports
+through RPC after evaluation; a completion marker requests FFN summaries through
+its existing periodic worker health RPC. The harness waits up to 30 seconds for
+every rank while checking service liveness before teardown. The markers are
+removed after process cleanup; the FFN daemon does not service HTTP utilities. All Attention/FFN ranks must
+execute the requested feature. DBO requires matching two-stage A/F layouts;
+graph+DBO requires consecutive completed replays of the same layout. Dummy/profile/
+capture work and empty second microbatches do not qualify.
+Pure eager and native baseline cases do not load the probe,
+and performance comparisons omit it. No per-step logging or runner identity
+checks are used. NPU DBO retains its existing live split check.
 
 DeepSeek 2A2F cases use 2 Attention ranks and 2 FFN ranks.
 `baseline-graph` uses native DP4/TP1/EP4. The 2A1F cases (`afd-eager-2a1f`,
