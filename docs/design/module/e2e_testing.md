@@ -192,8 +192,9 @@ Qwen3.5/3.6 model boundary, and `--language-model-only`. All current GPU
 scenarios select native ModelRunnerV2; earlier V1 hardware records retain
 their original scope. Its default suite uses native DP4/TP1/EP4 for
 `baseline-graph`, and synchronous AFD 2A1F for `afd-eager` and `afd-graph`.
-Qwen3.5/3.6 GDN DBO is unsupported under native hybrid/multimodal validation;
-its graph+DBO node is removed from the suite and weekly CI. Earlier H20
+Qwen3.5/3.6 GDN DBO is temporarily withdrawn pending native upstream hybrid
+DBO support. Native hybrid/multimodal validation applies; its graph+DBO node
+is removed from the suite and weekly CI. Earlier H20
 Graph + DBO and six-cell recurrent-state/CUDA Graph parity results describe
 the removed adapter and are historical evidence only. Earlier evidence also
 recorded an FFN CUDA illegal memory access during a live two-ubatch decode
