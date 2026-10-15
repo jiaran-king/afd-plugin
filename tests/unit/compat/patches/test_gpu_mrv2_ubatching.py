@@ -138,7 +138,6 @@ def patches():
         "CUDAGraphMode": _CUDAGraphMode,
         "BatchExecutionDescriptor": _BatchDescriptor,
         "UBatchRunner": NativeUBatchRunner,
-        "QwenGDNModelState": type("QwenGDNModelState", (), {}),
         "DPMetadata": NativeDPMetadata,
         "model_runner": native_module,
         "logger": SimpleNamespace(info_once=lambda *args: None),

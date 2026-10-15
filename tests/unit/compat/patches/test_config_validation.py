@@ -28,8 +28,6 @@ def _install_fake_vllm_config(monkeypatch):
     vllm_module = types.ModuleType("vllm")
     vllm_module.__dict__["__version__"] = "0.30.0"
     config_package = types.ModuleType("vllm.config")
-    config_package.__dict__["CUDAGraphMode"] = SimpleNamespace(PIECEWISE="piecewise")
-    vllm_module.__dict__["envs"] = SimpleNamespace(VLLM_USE_V2_MODEL_RUNNER=True)
     config_module = types.ModuleType("vllm.config.vllm")
     engine_package = types.ModuleType("vllm.engine")
     arg_utils_module = types.ModuleType("vllm.engine.arg_utils")
@@ -40,9 +38,15 @@ def _install_fake_vllm_config(monkeypatch):
     )
 
     class VllmConfig:
+        model_config: SimpleNamespace
         parallel_config: SimpleNamespace
         additional_config: dict
         platform_worker_cls = VLLM_GPU_WORKER_FQCN
+
+        def _get_dbo_unsupported_features(self):
+            if self.model_config.is_hybrid:
+                return ["dual batch overlap with hybrid models"]
+            return []
 
         def __post_init__(self):
             if self.parallel_config.use_ubatching:
@@ -112,6 +116,21 @@ def _load_patch_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+@pytest.mark.parametrize("is_hybrid", [False, True])
+def test_patch_preserves_native_dbo_model_restrictions(monkeypatch, is_hybrid):
+    _, config_module = _install_fake_vllm_config(monkeypatch)
+    native_restrictions = config_module.VllmConfig._get_dbo_unsupported_features
+
+    _load_patch_module()
+
+    assert config_module.VllmConfig._get_dbo_unsupported_features is native_restrictions
+    config = config_module.VllmConfig()
+    config.additional_config = {"afd": {"role": "attention"}}
+    config.model_config = SimpleNamespace(is_hybrid=is_hybrid)
+    expected = ["dual batch overlap with hybrid models"] if is_hybrid else []
+    assert config._get_dbo_unsupported_features() == expected
 
 
 def _engine_args(*, active, role="attention", worker_cls="auto"):

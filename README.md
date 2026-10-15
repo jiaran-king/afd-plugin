@@ -48,7 +48,7 @@ Model support:
 | --- | --- | --- | --- |
 | DeepSeekV2 / DeepSeekV3 / DeepSeekV3.2 | `DeepseekForCausalLM`, `DeepseekV2ForCausalLM`, `DeepseekV3ForCausalLM`, `DeepseekV32ForCausalLM` | `AFDDeepseekForCausalLM`, `AFDDeepseekV2ForCausalLM`, `AFDDeepseekV3ForCausalLM` | DeepSeekV3.2 uses `AFDDeepseekV3ForCausalLM`. Each AFD role constructs and loads only its role-required model components, while shared embedding, normalization, and output components remain available where required by the model lifecycle. |
 | Qwen3 MoE | `Qwen3MoeForCausalLM` | `AFDQwen3MoeForCausalLM` | CUDA with `compute_gate_on_attention=false`. |
-| Qwen3.5 / Qwen3.6 MoE | `Qwen3_5MoeForConditionalGeneration` | `AFDQwen3_5MoeForConditionalGeneration` | CUDA text-only Qwen3.6-35B-A3B with `--language-model-only`, native DP4/TP1/EP4, and synchronous AFD 2A1F. The native V2 hybrid DBO adaptation has H20 real-model Graph + DBO and six-cell recurrent-state/CUDA Graph parity evidence. Earlier eager/graph evidence and the historical DBO fault retain their original scope; see the [E2E limits](docs/design/module/e2e_testing.md). |
+| Qwen3.5 / Qwen3.6 MoE | `Qwen3_5MoeForConditionalGeneration` | `AFDQwen3_5MoeForConditionalGeneration` | CUDA text-only Qwen3.6-35B-A3B with `--language-model-only`, native DP4/TP1/EP4, and synchronous AFD 2A1F. Eager and graph execution remain supported; GDN DBO is unsupported under native hybrid/multimodal validation. Earlier DBO experiments are historical evidence only; see the [E2E limits](docs/design/module/e2e_testing.md). |
 
 Connector support:
 
@@ -91,6 +91,7 @@ Known gaps:
   MoE, EPLB, pipeline parallelism, speculative decoding, LoRA, and NPU.
 - Qwen3.5/Qwen3.6 MoE adapter-family support is limited to the CUDA text-only
   lane; repository hardware E2E evidence currently covers Qwen3.6-35B-A3B.
+  GDN DBO is unsupported; upstream hybrid/multimodal DBO validation applies.
   NPU and multimodal execution are unsupported/unverified;
   `compute_gate_on_attention=true`, pipeline parallelism, asynchronous and
   multi-node execution are unsupported; quantization is unverified; no

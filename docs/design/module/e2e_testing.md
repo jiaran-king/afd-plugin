@@ -119,10 +119,16 @@ and the six DP2/TP2/DBO V2 cases. The V2 DP2 cases replace the three duplicate
 GPU 2A2F cases; the eager/DBO comparison retains 128 samples, concurrency 12
 and the 0.27 accuracy threshold. The backend-neutral 2A2F IDs remain available
 for NPU. The GPU module collects 12 cases, including local 1A1F and 2A1F
-coverage; the NPU module collects its seven existing cases.
+coverage; the NPU module collects its seven existing cases. Across the three
+GPU model suites, 19 cases remain: DeepSeek 12, Qwen3 MoE four, and Qwen3.6
+MoE three. Compared with the historical 23, three duplicate DeepSeek cases
+are replaced and Qwen3.6 GDN DBO coverage is explicitly withdrawn.
 
-GPU cases run without test worker extensions. They gate accuracy, service
-liveness and cleanup, without per-step runner or graph-replay telemetry.
+GPU cases gate accuracy, service liveness and cleanup. AFD GPU graph/DBO
+cases additionally use a test-only worker extension to collect bounded per-rank
+execution summaries after evaluation. The summaries must prove actual replay
+or two-stage execution; dummy/profile/capture work does not qualify. Pure
+eager and native baseline cases, and performance comparisons, omit the probe.
 NPU DBO retains its live split check from existing runtime logs.
 CUDA ready/merge CI runs in one 80-minute job. Put slower coverage in a
 scheduled job.
@@ -185,13 +191,15 @@ The Qwen3.5/3.6 adapter-family suite uses `Qwen/Qwen3.6-35B-A3B`, the native
 Qwen3.5/3.6 model boundary, and `--language-model-only`. All current GPU
 scenarios select native ModelRunnerV2; earlier V1 hardware records retain
 their original scope. Its default suite uses native DP4/TP1/EP4 for
-`baseline-graph`, and synchronous AFD 2A1F for `afd-eager`, `afd-graph`, and `afd-graph-dbo`.
-The Qwen3.6 native V2 hybrid DBO adaptation has H20 real-model Graph + DBO
-and six-cell recurrent-state/CUDA Graph parity evidence on the pinned runtime.
-Earlier evidence recorded an FFN CUDA illegal memory access during a live
-two-ubatch decode split before v0.30. The existing graph+DBO nodes are restored in
-[weekly E2E](../../../tests/e2e/README.md#weekly-gsm8k); their current hardware
-evidence is recorded separately from that older failure.
+`baseline-graph`, and synchronous AFD 2A1F for `afd-eager` and `afd-graph`.
+Qwen3.5/3.6 GDN DBO is unsupported under native hybrid/multimodal validation;
+its graph+DBO node is removed from the suite and weekly CI. Earlier H20
+Graph + DBO and six-cell recurrent-state/CUDA Graph parity results describe
+the removed adapter and are historical evidence only. Earlier evidence also
+recorded an FFN CUDA illegal memory access during a live two-ubatch decode
+split before v0.30. Neither historical record qualifies current GDN DBO support.
+Qwen3 MoE retains its graph+DBO case in
+[weekly E2E](../../../tests/e2e/README.md#weekly-gsm8k).
 Multimodal, NPU, `compute_gate_on_attention=true`, pipeline-parallel,
 asynchronous, and multi-node execution are outside this case; quantization is
 unverified.
@@ -206,7 +214,7 @@ unverified.
 | Samples | first 7 for ordinary cases; default DBO floors at 24; V2 DP2 eager/DBO comparison defaults to 128 | first 7; all DBO cases floor at 24 |
 | Metric | GSM8K exact match | GSM8K exact match |
 | Minimum accuracy | DeepSeek-V2-Lite smoke (up to 24 samples): 0.25; otherwise 0.27 | DeepSeek-V2-Lite smoke (up to 24 samples): 0.25; otherwise 0.27 |
-| Cases | seven CUDA DeepSeek-V2-Lite cases; four existing NPU DeepSeek-V2-Lite cases | eight Qwen3 MoE / Qwen3.6 MoE cases plus DeepSeek-V2-Lite `afd-graph-dbo-2a1f` |
+| Cases | seven CUDA DeepSeek-V2-Lite cases; four existing NPU DeepSeek-V2-Lite cases | seven Qwen3 MoE / Qwen3.6 MoE cases plus DeepSeek-V2-Lite `afd-graph-dbo-2a1f` |
 
 An accuracy of `0.27` requires at least 2 correct answers out of 7, 7 out of
 24, or 35 out of 128. The DeepSeek smoke threshold of `0.25` requires 6 out

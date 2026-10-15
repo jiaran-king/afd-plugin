@@ -8,12 +8,14 @@ The DeepSeek-V2-Lite GPU gate runs seven scenarios: `baseline-graph`,
 `afd-v2-graph-tp2`, `afd-v2-eager-dbo-dp2`, and `afd-v2-graph-dbo-dp2`.
 The V2 DP2 cases replace the duplicate GPU `afd-eager-2a2f`,
 `afd-graph-2a2f`, and `afd-graph-dbo-2a2f` cases. NPU retains those three
-2A2F cases plus `baseline-graph`. Qwen3 MoE and Qwen3.6 MoE retain four
-GPU gate cases: baseline and AFD eager, graph, and graph+DBO on 2A1F.
+2A2F cases plus `baseline-graph`. Qwen3 MoE retains four GPU gate cases:
+baseline and AFD eager, graph, and graph+DBO on 2A1F. Qwen3.6 MoE retains
+three: baseline and AFD eager and graph on 2A1F. GDN DBO is unsupported.
 
-The full GPU model suite collects 20 cases, down from 23 before GPU V1
-retirement. The three removed cases have retained counterparts with the same
-2A2F DP2/TP1 topology and execution mode:
+The full GPU model suite collects 19 cases, down from 23 before GPU V1
+retirement: three duplicate DeepSeek cases are replaced, and Qwen3.6 GDN
+graph+DBO support is explicitly withdrawn. The three duplicate cases have
+retained counterparts with the same 2A2F DP2/TP1 topology and execution mode:
 
 | Removed GPU case | Retained GPU case |
 | --- | --- |
@@ -21,13 +23,14 @@ retirement. The three removed cases have retained counterparts with the same
 | `afd-graph-2a2f` | `afd-v2-graph-dp2` |
 | `afd-graph-dbo-2a2f` | `afd-v2-graph-dbo-dp2` |
 
-DeepSeek retains 12 cases; Qwen3 MoE and Qwen3.6 MoE retain four each.
-Baseline, 1A1F, 2A1F, DP2, TP2, eager, graph and DBO scenario coverage remains.
-This preserves functional coverage on V2; it does not retain the retired V1
-implementation. Workloads are not identical: the retained DP2 eager/DBO
-comparison already uses 128 samples instead of the removed eager case's
+DeepSeek retains 12 cases, Qwen3 MoE four, and Qwen3.6 MoE three.
+DeepSeek and Qwen3 MoE scenario coverage remains; Qwen3.6 retains ordinary
+eager/graph coverage but loses its GDN DBO case. The current suite therefore
+does not preserve all historical functional coverage. Workloads are not
+identical: the retained DP2 eager/DBO comparison already uses 128 samples
+instead of the removed eager case's
 seven or graph+DBO case's 24-sample minimum. Ready/merge CI keeps the baseline
-and six V2 cases; weekly CI also includes both Qwen graph+DBO cases.
+and six V2 cases; weekly CI includes Qwen3 MoE graph+DBO, but no Qwen3.6 DBO case.
 
 Ordinary cases evaluate the first 7 GSM8K samples; DBO cases have a
 24-sample minimum and 12 concurrent requests. The GPU DP2 eager/eager-DBO/
@@ -56,8 +59,8 @@ is used as-is; otherwise the defaults are:
   DP1/TP2 on both roles. `baseline-graph` uses all four for DP4/TP1/EP4.
 - The 2A1F cases use the first two for Attention and the third for FFN,
   leaving the fourth device idle. DeepSeek-V2-Lite eager/graph are local-only;
-  its graph+DBO case is selected by weekly CI. For Qwen3 MoE and Qwen3.6 MoE,
-  all three are suite gate scenarios.
+  its graph+DBO case is selected by weekly CI. Qwen3 MoE selects all three AFD
+  modes; Qwen3.6 MoE selects only AFD eager and graph.
 
 Tests run sequentially and must not skip. Every GSM8K evaluation uses 8
 few-shot examples and a 4096-token maximum model length.
@@ -128,24 +131,25 @@ python -m pytest -q -s \
   tests/e2e/models/qwen3_6/test_qwen3_6.py
 ```
 
-Success means seven GPU DeepSeek gate cases, or four cases for the NPU
-DeepSeek gate or either GPU Qwen suite, passed with zero skips.
+Success means seven GPU DeepSeek gate cases, four NPU DeepSeek gate cases,
+four GPU Qwen3 MoE cases, or three GPU Qwen3.6 MoE cases, passed with zero skips.
 Running the entire DeepSeek module also selects
 local cases: 12 on GPU, seven on NPU.
 
 The Qwen3.5/3.6 adapter-family suite uses `Qwen/Qwen3.6-35B-A3B` and
 `P2pNcclAFDConnector` on CUDA. The runner now selects native ModelRunnerV2
 for every GPU scenario, including the baseline; FFN remains connector-driven.
-Earlier V1 hardware records retain their original scope. The Qwen hybrid
-DBO adaptation has H20 real-model Graph + DBO and six-cell recurrent-state/
-CUDA Graph parity evidence on the pinned vLLM runtime.
+Earlier V1 hardware records retain their original scope. Qwen3.5/3.6 GDN
+DBO is unsupported under native hybrid/multimodal validation. Earlier H20
+Graph + DBO and six-cell recurrent-state/CUDA Graph parity results describe
+the removed adapter and are historical evidence only.
 Every scenario passes `--language-model-only`;
 multimodal execution is not covered. `baseline-graph` uses native DP4/TP1/EP4
-on four devices. The three AFD scenarios use synchronous 2A1F: Attention on
+on four devices. The two AFD scenarios use synchronous 2A1F: Attention on
 the first two devices and FFN on the third. The fourth device remains unused
 by AFD scenarios. The suite uses eight-shot GSM8K with a 4096-token model
 length and a 0.27 minimum exact-match gate: seven samples for baseline,
-eager, and graph, and the existing 24-sample minimum for graph + DBO. NPU, multimodal,
+eager, and graph. NPU, multimodal,
 `compute_gate_on_attention=true`, pipeline-parallel, asynchronous, and
 multi-node execution are not covered; quantization is unverified.
 
@@ -209,7 +213,7 @@ summary-based probe was revalidated on four H20s on 2026-10-14 (SLURM 5299):
 eager+DBO passed at 40/128 (0.3125) and graph+DBO at 42/128 (0.328125).
 Every Attention/FFN DP2/TP1 rank reported completed two-stage execution; the
 graph case also confirmed matching A/F layouts and consecutive same-layout
-replays. This targeted validation is not a fresh run of all 20 GPU scenarios.
+replays. This targeted validation is not a fresh run of the current 19 GPU scenarios.
 The `afd-graph-dbo-2a1f` case also selects
 GPU V2 with a different topology and workload.
 These generic MRV2 scenarios remain CUDA-only. NPU native DBO needs separate
@@ -220,16 +224,16 @@ do not establish numerical equivalence or full-dataset qualification.
 
 ### Weekly GSM8K
 
-The weekly pipeline runs all four scenarios in each Qwen3 MoE and Qwen3.6
-MoE suite (baseline, eager, graph, and graph+DBO), plus the DeepSeek-V2-Lite
-`afd-graph-dbo-2a1f` scenario, all with the default GSM8K sample limit. To
-reproduce locally:
+The weekly pipeline runs eight scenarios: all four Qwen3 MoE cases
+(baseline, eager, graph, and graph+DBO), the three Qwen3.6 MoE cases
+(baseline, eager, and graph), and DeepSeek-V2-Lite `afd-graph-dbo-2a1f`,
+all with the default GSM8K sample limit. To reproduce locally:
 
 ```bash
 # Qwen3 MoE (all four scenarios)
 python -m pytest -q -s tests/e2e/models/qwen3_moe/test_qwen3_moe.py
 
-# Qwen3.6 MoE (all four scenarios)
+# Qwen3.6 MoE (all three scenarios; GDN DBO unsupported)
 python -m pytest -q -s tests/e2e/models/qwen3_6/test_qwen3_6.py
 ```
 

@@ -1,6 +1,6 @@
 # Weekly — Simple Test + E2E. Uploaded by cuda/bootstrap-upload-steps.yml.
 # Trigger: main + WEEKLY=1, or PR label weekly-test.
-# Runs all eight existing Qwen3 MoE and Qwen3.6 MoE scenarios, including
+# Runs seven Qwen3 MoE and Qwen3.6 MoE scenarios, including Qwen3 MoE
 # graph+DBO on V2, plus a
 # DeepSeek-V2-Lite 2A1F graph+DBO scenario, with the default GSM8K sample
 # limit (see e2e_testing.md).
@@ -26,7 +26,6 @@ steps:
         "tests/e2e/models/qwen3_6/test_qwen3_6.py::test_qwen3_6[baseline-graph]"
         "tests/e2e/models/qwen3_6/test_qwen3_6.py::test_qwen3_6[afd-eager-2a1f]"
         "tests/e2e/models/qwen3_6/test_qwen3_6.py::test_qwen3_6[afd-graph-2a1f]"
-        "tests/e2e/models/qwen3_6/test_qwen3_6.py::test_qwen3_6[afd-graph-dbo-2a1f]"
     mirror_hardwares: h100_4
 
   - label: "E2E · DeepSeekV2-Lite · 2A1F DBO Graph · GPU V2"

@@ -23,8 +23,9 @@ DeepSeek-V2-Lite on GPU has seven gate scenarios:
 
 The V2 DP2 cases replace the duplicate GPU 2A2F cases. NPU retains its four
 DeepSeek gate cases: `baseline-graph`, `afd-eager-2a2f`, `afd-graph-2a2f`,
-and `afd-graph-dbo-2a2f`. Qwen3 MoE and Qwen3.6 MoE retain four GPU cases:
-baseline plus AFD eager, graph, and graph+DBO on 2A1F.
+and `afd-graph-dbo-2a2f`. Qwen3 MoE retains four GPU cases: baseline plus
+AFD eager, graph, and graph+DBO on 2A1F. Qwen3.6 MoE retains three: baseline
+plus AFD eager and graph on 2A1F. Qwen3.5/3.6 GDN DBO is unsupported.
 
 Ordinary cases evaluate the first 7 GSM8K samples, with the existing
 24-sample minimum for DBO. GPU `afd-v2-eager-dp2`, `afd-v2-eager-dbo-dp2`
@@ -163,9 +164,10 @@ python -m pytest -q -s \
 
 The Qwen3.6 suite uses `Qwen/Qwen3.6-35B-A3B` and selects native vLLM V2
 for every GPU runner invocation, including the baseline. FFN remains
-connector-driven; there is no GPU V1 fallback. The Qwen hybrid DBO adaptation
-has H20 real-model Graph + DBO and six-cell recurrent-state/CUDA Graph parity
-evidence on the pinned vLLM runtime. The suite passes
+connector-driven; there is no GPU V1 fallback. Qwen3.5/3.6 GDN DBO is
+unsupported under native hybrid/multimodal validation. Earlier H20 Graph +
+DBO and recurrent-state/CUDA Graph parity results describe the removed
+adapter and are historical evidence only. The suite passes
 `--language-model-only` to every runner invocation. It is CUDA-only and
 text-only: `baseline-graph` is native DP4/TP1/EP4, while the AFD scenarios are
 synchronous 2A1F with Attention on the first two devices and FFN on the third.
@@ -183,7 +185,8 @@ On cancellation, forward SIGTERM and allow over 90 seconds for cleanup.
 ### 5. Report
 
 Success means all selected cases pass with zero skips: seven for the GPU
-DeepSeek gate; four for the NPU DeepSeek gate or either GPU Qwen suite.
+DeepSeek gate; four for the NPU DeepSeek gate or GPU Qwen3 MoE suite;
+three for the GPU Qwen3.6 MoE suite.
 The entire DeepSeek module includes local cases and collects 12 on GPU or
 seven on NPU. Report the actual selected count, failed scenario, first
 actionable error, and cleanup status. Any skip is a gate failure.

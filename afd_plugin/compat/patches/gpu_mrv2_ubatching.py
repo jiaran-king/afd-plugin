@@ -3,7 +3,7 @@
 """Scoped DBO seams for the pinned native GPU ModelRunnerV2.
 
 The native UBatchRunner owns input slicing, Attention preparation, threads and
-CUDA graphs. AFD extends DP1 metadata and Qwen full-step state-ID binding.
+CUDA graphs. AFD extends DP1 eligibility, dispatch and child-context metadata.
 Bindings are limited to AFD Attention initialization/execution and restored on
 exit; worker initialization and dispatch run synchronously in each process.
 """
@@ -26,9 +26,8 @@ from vllm.v1.worker.gpu.cudagraph_utils import (
     CudaGraphManager,
 )
 from vllm.v1.worker.gpu.dp_utils import DPSyncState, sync_cudagraph_and_dp_padding
-from vllm.v1.worker.gpu.input_batch import InputBatch
 from vllm.v1.worker.gpu.model_states.interface import ModelState
-from vllm.v1.worker.gpu.ubatch_utils import UBatchRunner, UBatchState, logger
+from vllm.v1.worker.gpu.ubatch_utils import UBatchRunner, logger
 from vllm.v1.worker.ubatch_utils import (
     UBatchSlices,
     check_ubatch_thresholds,
@@ -36,13 +35,11 @@ from vllm.v1.worker.ubatch_utils import (
 )
 from vllm.v1.worker.utils import AttentionGroup
 
-from afd_plugin.v1.worker.qwen_gdn_model_state import QwenGDNModelState
-
 
 # Patch reason: the native factory excludes DP1, although AFD schedules its two
 # stages locally and sends their complete metadata to the FFN control plane.
 # Patch functionality: construct the native UBatchRunner at DP1 and bind only its
-# DP1 child-context metadata factory and Qwen full-batch state binding.
+# DP1 child-context metadata factory.
 # Signature: matches maybe_build_ubatch_runner exactly at the pinned commit.
 # Upstream: vllm/v1/worker/gpu/ubatch_utils.py, maybe_build_ubatch_runner;
 # ced6857afa0ea7b2e3f0846a62e1394e90f15607 (vLLM 0.30.0).
@@ -73,47 +70,7 @@ def maybe_build_ubatch_runner(
     if parallel_config.data_parallel_size == 1:
         runner._make_forward_contexts = MethodType(_make_forward_contexts, runner)
     # ### PATCH END: bind native DP1 child metadata on this instance.
-    # ### PATCH START: bind Qwen state before native slicing, at DP1 and DP>1.
-    if isinstance(model_state, QwenGDNModelState):
-        runner.prepare = MethodType(prepare, runner)
-    # ### PATCH END: bind Qwen state before native slicing, at DP1 and DP>1.
     return runner
-
-
-# Patch reason: native UBatchRunner.prepare passes only stage-local tables and
-# lengths to hybrid metadata, which cannot recover a straddling full-step ID.
-# Patch functionality: bind Qwen's full-step IDs around the unchanged native
-# slicing/builder calls; native execution, threads, streams and graphs remain.
-# Expansion exception: delegate the native slicing routine because this scope
-# adds no changes to its loop or return; copying it would duplicate its lifecycle.
-# Signature: matches UBatchRunner.prepare exactly at the pinned commit.
-# Upstream: vllm/v1/worker/gpu/ubatch_utils.py, UBatchRunner.prepare;
-# ced6857afa0ea7b2e3f0846a62e1394e90f15607 (vLLM 0.30.0).
-# Removal plan: remove when native hybrid DBO binds full-step recurrent IDs.
-def prepare(
-    self,
-    input_batch: InputBatch,
-    block_tables: tuple[torch.Tensor, ...],
-    slot_mappings: torch.Tensor,
-    cg_mode: CUDAGraphMode = CUDAGraphMode.NONE,
-    for_capture: bool = False,
-) -> UBatchState:
-    # ### PATCH START: scope full-step Qwen state around native preparation.
-    with self.model_state.bind_full_batch(
-        input_batch,
-        block_tables,
-        self.kv_cache_config,
-        for_capture=for_capture,
-    ):
-        return UBatchRunner.prepare(
-            self,
-            input_batch,
-            block_tables,
-            slot_mappings,
-            cg_mode,
-            for_capture,
-        )
-    # ### PATCH END: scope full-step Qwen state around native preparation.
 
 
 # Patch reason: DPMetadata.make asserts DP>1 or SP; AFD DP1 uses neither.

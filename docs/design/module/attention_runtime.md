@@ -10,7 +10,6 @@ primary_code_paths:
   - "afd_plugin/v1/worker/attention_model_runner_v2.py"
   - "afd_plugin/v1/worker/attention_worker.py"
   - "afd_plugin/v1/worker/ubatch_wrapper.py"
-  - "afd_plugin/v1/worker/qwen_gdn_model_state.py"
   - "afd_plugin/v1/worker/npu/attention_model_runner.py"
   - "afd_plugin/v1/worker/npu/attention_model_runner_v2.py"
   - "afd_plugin/v1/worker/npu/attention_worker.py"
@@ -164,8 +163,9 @@ CUDA requires V2. NPU retains its separate V1/V2 selection. The V2 constraints a
 
 Both roles validate the paired V2 topology, but only Attention uses the native
 V2 model runner. FFN remains connector-driven and uses its existing AFD runner
-surface. CUDA V2 has DP2/TP2 eager and graph E2E evidence. Qwen hybrid DBO has H20
-real-model Graph + DBO and six-cell recurrent-state/CUDA Graph parity evidence.
+surface. CUDA V2 has DP2/TP2 eager and graph E2E evidence. Qwen3.5/3.6 GDN
+DBO is unsupported; native hybrid/multimodal DBO validation applies. Qwen3 MoE
+DBO remains supported.
 The GPU DP1 path has H20 DeepSeek-V2-Lite DP1/TP2 Graph + DBO validation:
 128 GSM8K samples and live two-stage/full-replay assertions.
 Ascend V2 has V2-Lite 2A1F eager/graph functional checks and a 2A2F FULL 300-question run;

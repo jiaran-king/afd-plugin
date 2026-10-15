@@ -192,9 +192,10 @@ This path is CUDA-only, text-only, and requires `--language-model-only`,
 `compute_gate_on_attention=false`, and `pipeline_parallel_size=1`. It rejects
 multimodal execution, sequence-parallel MoE, EPLB, speculative decoding, and
 LoRA before language-model construction; NPU model-config resolution fails
-before model loading. Native V2 DBO uses the private Qwen GDN model-state
-adapter; H20 real-model Graph + DBO and six-cell recurrent-state/CUDA
-Graph parity checks pass on the pinned runtime. The current
+before model loading. GDN DBO is unsupported under native hybrid/multimodal
+DBO validation; ordinary eager and graph execution remain supported. Earlier
+H20 Graph + DBO and recurrent-state/CUDA Graph parity checks describe the
+removed adapter and do not qualify the current implementation. The current
 2A1F suite keeps static EP and PP1. Attention-side router transport, async
 communication, multi-node, quantization, and performance remain outside the
 validated scope.
