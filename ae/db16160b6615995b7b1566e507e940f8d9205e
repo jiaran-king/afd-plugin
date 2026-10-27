@@ -1,0 +1,58 @@
+afd_plugin/__init__.py
+  h_5b66c48fc362a8 114-117
+afd_plugin/compat/npu/feature_validation.py
+  h_5b66c48fc362a8 237-267
+afd_plugin/model_executor/models/model_utils.py
+  h_5b66c48fc362a8 11,14,35-36,50-60
+afd_plugin/model_executor/models/npu/deepseek_v4.py
+  h_5b66c48fc362a8 198,238,354-358,381,384,403
+afd_plugin/model_executor/models/npu/deepseek_v4_dspark.py
+  h_5b66c48fc362a8 1-240
+afd_plugin/v1/worker/npu/async_ffn_model_runner.py
+  h_5b66c48fc362a8 8,92,143-156,172-180,479-484,499,507,553
+afd_plugin/v1/worker/npu/attention_model_runner_v2.py
+  h_5b66c48fc362a8 55,262-273,282-303
+afd_plugin/v1/worker/npu/attention_worker.py
+  h_5b66c48fc362a8 19-22,67
+afd_plugin/v1/worker/npu/dspark_speculator.py
+  h_5b66c48fc362a8 1-75
+afd_plugin/v1/worker/npu/ffn_worker.py
+  h_5b66c48fc362a8 30-33,107
+docs/design/module/attention_runtime.md
+  h_5b66c48fc362a8 15,31
+docs/design/module/model_integration.md
+  h_5b66c48fc362a8 83,155-165
+recipe/README.md
+  h_5b66c48fc362a8 39
+recipe/npu/CAMAsyncAFDConnector/deepseek_v4_flash/README.md
+  h_5b66c48fc362a8 1-98
+recipe/npu/CAMAsyncAFDConnector/deepseek_v4_flash/dspark_eager.py
+  h_5b66c48fc362a8 1-173
+tests/e2e/models/deepseek_v4_flash/dspark_eager.py
+  h_5b66c48fc362a8 1-207
+tests/e2e/models/deepseek_v4_flash/dspark_evidence.py
+  h_5b66c48fc362a8 1-79
+tests/unit/compat/npu/test_feature_validation.py
+  h_5b66c48fc362a8 22,33-57
+tests/unit/fakes/vllm_config.py
+  h_5b66c48fc362a8 45,136-157
+tests/unit/model_executor/models/npu/test_deepseek_v4_dspark.py
+  h_5b66c48fc362a8 1-70
+tests/unit/model_executor/models/test_model_utils.py
+  h_5b66c48fc362a8 1-35
+tests/unit/test_async_cam_startup_wiring.py
+  h_5b66c48fc362a8 279,471
+tests/unit/v1/worker/npu/test_attention_model_runner_v2.py
+  h_5b66c48fc362a8 1-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "aedb16160b6615995b7b1566e507e940f8d9205e",
+  "prompts": {},
+  "humans": {
+    "h_5b66c48fc362a8": {
+      "author": "AFD维护 Bot <afd-maint-bot@localhost>"
+    }
+  }
+}
