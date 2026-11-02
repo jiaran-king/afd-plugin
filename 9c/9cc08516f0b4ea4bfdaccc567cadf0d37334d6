@@ -1,0 +1,23 @@
+recipe/README.md
+  s_23db3103df03fa::t_ce41d3e70b9118 46
+recipe/npu/CAMAsyncAFDConnector/deepseek_v4_flash/README.md
+  s_23db3103df03fa::t_ce41d3e70b9118 9,65-66
+docs/design/module/model_integration.md
+  s_23db3103df03fa::t_ce41d3e70b9118 167
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9c9cc08516f0b4ea4bfdaccc567cadf0d37334d6",
+  "prompts": {},
+  "sessions": {
+    "s_23db3103df03fa": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a17c0a-3db6-7640-b08e-b8ab873174ca",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "AFD维护 Bot <afd-maint-bot@localhost>"
+    }
+  }
+}
