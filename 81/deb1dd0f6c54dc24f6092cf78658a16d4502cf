@@ -1,0 +1,21 @@
+afd_plugin/distributed/kv_transfer/dspark_mooncake.py
+  s_23db3103df03fa::t_346c9250667361 117-120,459-463,1000-1016
+recipe/npu/CAMAsyncAFDConnector/deepseek_v4_flash/README.md
+  s_23db3103df03fa::t_7de740fe03655c 186-201
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "81deb1dd0f6c54dc24f6092cf78658a16d4502cf",
+  "prompts": {},
+  "sessions": {
+    "s_23db3103df03fa": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a17c0a-3db6-7640-b08e-b8ab873174ca",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "AFD维护 Bot <afd-maint-bot@localhost>"
+    }
+  }
+}
