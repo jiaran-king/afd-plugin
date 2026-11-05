@@ -1,5 +1,7 @@
 # E2E 场景矩阵与本次调整（RFC 附件）
 
+简体中文 | [English](e2e_case_matrix.en.md)
+
 状态：设计与覆盖变更提案，尚未修改测试或 CI。本文是 [E2E 框架 RFC](e2e_test_framework.md) 的正式附件，用于评审保留范围、替代关系和迁移验收；不是执行日志或设备通过报告。
 
 基线：AFD `main@e778192d4c1cfd47e97be1881047532bfce7a7c0`（2026-11-05）。

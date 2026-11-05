@@ -1,5 +1,7 @@
 # AFD E2E 测试框架设计与维护方式
 
+简体中文 | [English](e2e_test_framework.en.md)
+
 状态：RFC 设计草案。本文描述调整后的目标结构，尚未实现；示例接口不是当前可执行 API。现行运行命令和验收标准仍以 [E2E README](../../tests/e2e/README.md) 与 [E2E 模块契约](module/e2e_testing.md) 为准。
 
 调查基线：AFD `main@e778192d4c1cfd47e97be1881047532bfce7a7c0`（2026-11-05）。参考版本和代码依据见文末。
