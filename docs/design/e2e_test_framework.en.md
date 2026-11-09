@@ -4,7 +4,7 @@
 
 Status: RFC draft. This document describes a proposed structure that has not been implemented. Example interfaces are not currently executable APIs. Existing commands and acceptance criteria remain defined by the [E2E README](../../tests/e2e/README.md) and the [E2E module contract](module/e2e_testing.md).
 
-Investigation baseline: AFD `main@e778192d4c1cfd47e97be1881047532bfce7a7c0` (2026-11-05). This is the English translation of the proposal published at `2209c5ca5ada5056abfa69c59c825ba3e7340240`; it introduces no design changes. Reference revisions and source evidence appear below.
+Investigation baseline: AFD `main@e778192d4c1cfd47e97be1881047532bfce7a7c0` (2026-11-05). The proposal was originally published at `2209c5ca5ada5056abfa69c59c825ba3e7340240`. This revision clarifies shared configuration following the RFC discussion; the inventory baseline and coverage proposals are unchanged. Reference revisions and source evidence appear below.
 
 Reading guide: §3.1 shows module ownership; §5.2 shows execution order. The appendix provides the [current scenarios](e2e_case_matrix.en.md#current-matrix), [removal conditions](e2e_case_matrix.en.md#deletion-gates), [proposed changes](e2e_case_matrix.en.md#target-matrix), and the [folded complete target list](e2e_case_matrix.en.md#full-target-matrix). Additions and removals have not been implemented. The Chinese document retains the publication filename `e2e_test_framework.md`; this English counterpart uses `e2e_test_framework.en.md`.
 
@@ -75,7 +75,7 @@ models/<model>/test_*.py
                                   ▼
 runner subprocess
 models/<model>/cases.py*
-    │
+    ├── composes ──▶ presets.py* (shared configuration, using case.py* types)
     │ supplies case builder to the shared entry
     ▼
 runner.py
@@ -99,6 +99,7 @@ The shared runner calls a model-supplied builder instead of importing a particul
 | Module | Status | Responsibilities and boundaries |
 | --- | --- | --- |
 | `case.py` | New | Data structures exchanged by scenarios, deployment and evaluation phases; no service startup or concrete model imports |
+| `presets.py` | New | Reusable configuration construction with identical semantics across models/backends; no model IDs, scenario selection or acceptance policies |
 | `models/<model>/cases.py` | New | Safely importable stable IDs; complete Case construction only in the runner subprocess; the model's runtime entry |
 | `models/<model>/test_*.py` | Adjust | Read IDs and parametrize during collection; call subprocess helpers during execution; retain existing pytest node IDs |
 | `runner.py` | Simplify | Organize check preparation, deployment, phases, liveness and exit; propagate failures |
@@ -113,6 +114,8 @@ The shared runner calls a model-supplied builder instead of importing a particul
 | `tests/conftest.py` | Retain | Runner subprocess and signal forwarding, distinct from deployment's tested-service ownership |
 
 Deployment owns service startup and release; no overlapping lifecycle module is needed. Multi-pod retains existing coordination. Each pod's deployment executor is the sole owner of its local processes and reclaims only its own resources. The current local executor may become a deployment adapter. Coordination must not run a second cleanup path; `cleanup_profile` is the single policy source.
+
+The shared coordinator owns role-launch, readiness, verdict and teardown barriers, their timeouts and peer-failure propagation. Models do not implement their own synchronization. Cross-pod probe/window synchronization remains the separate capability described in §7; configuration reuse alone does not add execution-evidence coverage.
 
 ## 4. Scenarios, environments and model configuration
 
@@ -133,6 +136,12 @@ A Case includes at least the following. Concrete type names will be settled thro
 In current AFD layouts, per-role device needs follow DP/TP and related settings. Validation preserves effective backend/connector rules. Do not maintain two ambiguous sources for role counts and total rank counts.
 
 Scenario names are for selection and reporting. Shared code may branch on backend, role, deployment shape or connector protocol, rather than infer them from a case ID.
+
+Configuration has three layers: shared types in `case.py`, reusable configuration presets in `presets.py`, and complete model-owned Cases in `models/<model>/cases.py`. Models compose applicable presets with their layouts, connector and execution settings; workloads, thresholds, required checks and cleanup requirements remain explicit in their Cases. Equal numeric values alone do not establish a shared policy. Specialized profiles may continue constructing Deployment directly.
+
+Presets are immutable configuration building blocks, not a global registry or a common scenario table automatically applied to every model. Existing-capability additions leave `presets.py` unchanged. A shared-preset change requires comparison of affected resolved configurations and commands plus focused integration checks.
+
+GPU and NPU reuse the same runner, deployment lifecycle and task/check interfaces. Connector protocols, device environments, compilation options and shutdown profiles express necessary differences. Retained legacy NPU multi-pod and dedicated paths migrate separately; their presence does not establish complete backend unification.
 
 `deployment.py` owns role launch order through its connector protocol table. A Case selects the connector and has no scenario-specific launch-order override. Preserve current protocol orders during migration:
 
@@ -370,7 +379,7 @@ Remove dedicated runners only after their distinct workloads, assertions, platfo
 | New deployment or connector protocol | `deployment.py` protocol table, necessary environment support and scenario | Protocol owns launch order and cross-pod coordination; validate readiness, layout, failure reclamation and `cleanup_profile` |
 | Retired behavior | Scenario, dedicated helpers, entry, CI and documentation | Whether behavior is removed and a substitute covers the same risk |
 
-Avoid purposeless configuration Cartesian products. If existing parametrization, tasks, checks and protocols can express the case, shared modules must not change. This includes runner, scenario structures, environment, deployment, shared tasks/checks, probes, multi-pod protocols and process tools. A new case does not justify another case-ID branch.
+Avoid purposeless configuration Cartesian products. If existing parametrization, tasks, checks and protocols can express the case, shared modules must not change. This includes runner, scenario structures, presets, environment, deployment, shared tasks/checks, probes, multi-pod protocols and process tools. A new case does not justify another case-ID branch.
 
 When a new task, check, deployment protocol or connector capability is needed, identify the missing capability, corresponding module and validation results, and review the capability extension explicitly. Independent framework fixes similarly state their cause and validation. Neither is a configuration-only addition. Declare cleanup exceptions through `cleanup_profile` and launch order through the connector table, not rewritten policies in model entries.
 
