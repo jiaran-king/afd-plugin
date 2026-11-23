@@ -1,0 +1,22 @@
+tests/unit/model_executor/models/test_deepseek_v2_construction.py
+  s_f816acce49b523::t_6c3b845d892f7b 49,734-735,738,741-743,750-754
+  s_f816acce49b523::t_9bfd6f9a73f756 755
+afd_plugin/model_executor/models/deepseek_v2.py
+  s_f816acce49b523::t_6c3b845d892f7b 728-729,799-803
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5ef691a50884f5c53d50d40312469ae780e1b41d",
+  "prompts": {},
+  "sessions": {
+    "s_f816acce49b523": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20622-713b-7e00-a34b-bc0d1c1b14ff",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "jiaran-king <jiaranran2@gmail.com>"
+    }
+  }
+}
