@@ -1,0 +1,19 @@
+csrc/npu/ascend_kernels/cmake_files/op_kernel/CMakeLists.txt
+  s_f816acce49b523::t_97324206b829f4 42-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5bdb78ccf9e30a6fa1ce9836e63f08c37be3d4d1",
+  "prompts": {},
+  "sessions": {
+    "s_f816acce49b523": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20622-713b-7e00-a34b-bc0d1c1b14ff",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "jiaran-king <jiaranran2@gmail.com>"
+    }
+  }
+}
