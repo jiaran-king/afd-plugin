@@ -1,0 +1,22 @@
+afd_plugin/compat/patches/npu/ascend_config.py
+  s_f816acce49b523::t_61d7c74d2e2e4e 16,42,92,95-96,226-227,232
+tests/unit/compat/npu/test_ascend_config_lifecycle.py
+  s_f816acce49b523::t_0ee4bdf4f771cf 52-54,104,130,175,237-247
+  s_f816acce49b523::t_d1e0316dede37a 248
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "53e96363368080d6979d4e28b2be2d4d9f4cfc55",
+  "prompts": {},
+  "sessions": {
+    "s_f816acce49b523": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20622-713b-7e00-a34b-bc0d1c1b14ff",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "jiaran-king <jiaranran2@gmail.com>"
+    }
+  }
+}
