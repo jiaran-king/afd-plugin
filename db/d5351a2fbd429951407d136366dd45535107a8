@@ -1,0 +1,27 @@
+docs/support.md
+  s_f816acce49b523::t_586219cc901a07 84
+  s_f816acce49b523::t_5969f9c5b03886 56-60,73-74
+docs/design/module/compatibility_and_patches.md
+  s_f816acce49b523::t_586219cc901a07 73-74
+  s_f816acce49b523::t_5969f9c5b03886 71-72,78,80-82
+docs/npu/CAM_P2P_CONNECTOR_USER_GUIDE.md
+  s_f816acce49b523::t_5969f9c5b03886 22-25
+docs/installation.md
+  s_f816acce49b523::t_5969f9c5b03886 45-47,54-60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "dbd5351a2fbd429951407d136366dd45535107a8",
+  "prompts": {},
+  "sessions": {
+    "s_f816acce49b523": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20622-713b-7e00-a34b-bc0d1c1b14ff",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "jiaran-king <jiaranran2@gmail.com>"
+    }
+  }
+}
