@@ -1,0 +1,23 @@
+tests/e2e/models/deepseek_v4_flash/test_dspark_core_checker.py
+  s_b4245959cb6e79::t_23f82b3e2a5b95 3,21,105
+  s_b4245959cb6e79::t_3961d22054fa32 18
+docs/UT_MAINTENANCE.md
+  s_b4245959cb6e79::t_9115ca6e800f62 22-25
+  s_b4245959cb6e79::t_dff3923f4f49a2 20-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bf84f15c90e213c5fa6f997fe656af83d7aaa680",
+  "prompts": {},
+  "sessions": {
+    "s_b4245959cb6e79": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1e971-8ef8-7872-8d77-5e26720ecded",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Zhou ziheng <jiaranran2@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,50 @@
+docs/npu/CAM_ASYNC_CONNECTOR_USER_GUIDE.md
+  s_23db3103df03fa::t_0fb8e66f354434 325,344-347,361-362
+afd_plugin/model_executor/models/npu/deepseek_v4.py
+  s_23db3103df03fa::t_58a2dba3febd50 65,729-730,774,776,781,789-791,815-818,824,830-833,835-836,845-846,852
+  s_23db3103df03fa::t_82411166a7b558 810,837-838
+afd_plugin/v1/worker/npu/async_ffn_model_runner.py
+  s_23db3103df03fa::t_58a2dba3febd50 40-42,71,96,204,214,393,401,403,411,415,417
+  s_23db3103df03fa::t_1867b121867f72 395-397
+docs/design/module/ffn_runtime.md
+  s_23db3103df03fa::t_a51b884a266e52 28-29,269
+  s_23db3103df03fa::t_0fb8e66f354434 266,268
+afd_plugin/model_executor/npu/async_cam_layered.py
+  s_23db3103df03fa::t_17ec06a57e4963 36-38,80-85,125-126,183-187,208-214,220-224,231-234
+  s_23db3103df03fa::t_8b19760f313ab7 1-8,10-35,39-75,78-79,86,89-124,127-182,188-192,195-207,215-219,225,229-230,235-283
+  s_23db3103df03fa::t_82411166a7b558 9,76-77,87-88,193-194,226-228
+tests/npu/README.md
+  s_23db3103df03fa::t_0fb8e66f354434 15-16,31
+tests/unit/model_executor/test_async_cam_layered.py
+  s_23db3103df03fa::t_1867b121867f72 89-91,151-166,168-175
+  s_23db3103df03fa::t_84d85c314ac1bd 1-88,92-129,135-150,167,176-343,345,347-351,353-363,365-543
+  s_23db3103df03fa::t_17ec06a57e4963 130,134
+  s_23db3103df03fa::t_77378ba0ad00ed 131-133,344,346,352,364
+docs/npu/TESTING.md
+  s_23db3103df03fa::t_0fb8e66f354434 95,99,108,113,117-118
+tests/npu/async_cam_runtime.py
+  s_23db3103df03fa::t_a51b884a266e52 32
+docs/npu/ASYNC_FFN_RUNTIME.md
+  s_23db3103df03fa::t_0fb8e66f354434 4,16,34,38-47,119
+tests/npu/test_async_cam_layered_w8a8.py
+  s_23db3103df03fa::t_2b90f02d5fd62f 7,105-111,126-128,131,148-158
+  s_23db3103df03fa::t_82411166a7b558 9,20-21,23,25-27,45-80,82-85,87-89,93,113-123,132-134,136-145
+  s_23db3103df03fa::t_a51b884a266e52 1-6,8,10-19,22,24,28-44,81,86,90-92,94-104,112,124-125,129-130,135,146-147
+  s_23db3103df03fa::t_e2eb1a972e5ca5 159-161
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "45375e0ca4b97980de80bcca77bbfcdeb46837f7",
+  "prompts": {},
+  "sessions": {
+    "s_23db3103df03fa": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a17c0a-3db6-7640-b08e-b8ab873174ca",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "AFD维护 Bot <afd-maint-bot@localhost>"
+    }
+  }
+}
