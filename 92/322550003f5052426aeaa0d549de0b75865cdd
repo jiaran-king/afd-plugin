@@ -1,0 +1,21 @@
+afd_plugin/v1/worker/npu/ffn_worker.py
+  s_f816acce49b523::t_aacfb8a3252353 138-141
+tests/unit/v1/worker/test_npu_runtime.py
+  s_f816acce49b523::t_aacfb8a3252353 555-561
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "92322550003f5052426aeaa0d549de0b75865cdd",
+  "prompts": {},
+  "sessions": {
+    "s_f816acce49b523": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20622-713b-7e00-a34b-bc0d1c1b14ff",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "Zhou ziheng <jiaranran2@gmail.com>"
+    }
+  }
+}
