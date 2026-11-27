@@ -1,0 +1,24 @@
+docs/npu/CAM_ASYNC_CONNECTOR_USER_GUIDE.md
+  s_4142e4d823eacb::t_0f378396438a61 64-66
+tests/unit/compat/npu/test_feature_validation.py
+  s_4142e4d823eacb::t_6a5a99db1ce6c6 285
+  s_4142e4d823eacb::t_0f378396438a61 244-251,256
+afd_plugin/compat/npu/feature_validation.py
+  s_4142e4d823eacb::t_6a5a99db1ce6c6 290,295
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c73c82ccf286f28fb05357263196e1114c9f9ab9",
+  "prompts": {},
+  "sessions": {
+    "s_4142e4d823eacb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20844-8a16-7323-87a1-9e08457b0f55",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "AFD维护 Bot <afd-maint-bot@localhost>"
+    }
+  }
+}

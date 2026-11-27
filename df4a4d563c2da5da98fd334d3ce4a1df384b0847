@@ -1,0 +1,40 @@
+afd_plugin/compat/patches/engine_core.py
+  s_23db3103df03fa::t_5c174e4b67a2da 693-696,698
+  s_23db3103df03fa::t_53132024f048fc 616-618
+afd_plugin/compat/patches/async_dp_engine.py
+  s_23db3103df03fa::t_e1d6d2f2b27948 83,85
+  s_23db3103df03fa::t_55f4a0f3dc6945 46,220-228
+  s_23db3103df03fa::t_6bf5ff97ffea68 203-206
+  s_23db3103df03fa::t_36ebf2fcf59176 84,198-202,207-209,229,245,260
+  s_23db3103df03fa::t_b8958e8f966bf7 66-69,219,230-235,244,246-252,255-259,261-267
+tests/unit/compat/patches/test_async_dp_engine.py
+  s_23db3103df03fa::t_6bf5ff97ffea68 102-105,278,281-282,284-289,334-338,342,358-361
+  s_23db3103df03fa::t_55f4a0f3dc6945 270-273,283,290,295-298,300-306,320-323,327-330,333,350,372-392,395-396
+  s_23db3103df03fa::t_36ebf2fcf59176 275-277,291-293,309-310,312-314,339,345-346,349,362-368
+  s_23db3103df03fa::t_b8958e8f966bf7 274,279-280,299,307-308,311,315-319,324-326,331-332,343-344,351-357,369-371,393-394
+  s_23db3103df03fa::t_fb63fc5f468209 20-23
+  s_23db3103df03fa::t_15c881b390db3d 100-101,106,294,340-341,347-348
+  s_23db3103df03fa::t_6d1c9cc8ba623e 24
+tests/unit/compat/patches/test_engine_core.py
+  s_23db3103df03fa::t_5c174e4b67a2da 11,90-93,616,633,645
+  s_23db3103df03fa::t_1bb1db0913d9be 668
+  s_23db3103df03fa::t_14ce2629357755 632
+  s_23db3103df03fa::t_53132024f048fc 66,653-667,669-686
+  s_23db3103df03fa::t_e0a1d193f9841d 687-688
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "df4a4d563c2da5da98fd334d3ce4a1df384b0847",
+  "prompts": {},
+  "sessions": {
+    "s_23db3103df03fa": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a17c0a-3db6-7640-b08e-b8ab873174ca",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "AFD维护 Bot <afd-maint-bot@localhost>"
+    }
+  }
+}

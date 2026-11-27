@@ -1,0 +1,29 @@
+docs/design/module/e2e_testing.md
+  s_b4245959cb6e79::t_fca2eded02a617 428,443-444
+  s_b4245959cb6e79::t_25dd0afd976b42 445
+docs/UT_MAINTENANCE.md
+  s_b4245959cb6e79::t_b460349ccfe5b2 62-64
+  s_b4245959cb6e79::t_fca2eded02a617 20-30,61
+  s_b4245959cb6e79::t_9f4380e4ba01ae 65
+tests/e2e/models/deepseek_v4_flash/test_dspark_core_checker.py
+  s_b4245959cb6e79::t_fca2eded02a617 34,40-43,49,55,75-76,111,114-117,124,131,152-154,248,251-253,264,293-297,299-302,308-311,342-343,345-349
+  s_b4245959cb6e79::t_123c18030f4fd8 57,61,71-74
+  s_b4245959cb6e79::t_6e589dcec25e3e 35-38,44-47
+  s_b4245959cb6e79::t_b460349ccfe5b2 48,50-52,94-96,298,334-335,338
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bf8e43ae97a20ef9786a60a7630ea3a604e3712a",
+  "prompts": {},
+  "sessions": {
+    "s_b4245959cb6e79": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1e971-8ef8-7872-8d77-5e26720ecded",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "Zhou ziheng <jiaranran2@gmail.com>"
+    }
+  }
+}

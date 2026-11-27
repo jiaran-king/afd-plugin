@@ -1,0 +1,21 @@
+docs/design/module/execution_platforms.md
+  s_f816acce49b523::t_7f316e4991e19c 288-290,306,310-313,326-327
+afd_plugin/v1/worker/attention_model_runner_v2.py
+  s_f816acce49b523::t_7f316e4991e19c 7,149
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6aee08e6b89a911f1a1f2a25278a99bd2d14e50d",
+  "prompts": {},
+  "sessions": {
+    "s_f816acce49b523": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20622-713b-7e00-a34b-bc0d1c1b14ff",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "jiaran-king <jiaranran2@gmail.com>"
+    }
+  }
+}

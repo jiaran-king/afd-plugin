@@ -1,0 +1,20 @@
+afd_plugin/model_executor/models/npu/deepseek_v4.py
+  h_aad1df515ba402 368
+tests/e2e/README.md
+  h_aad1df515ba402 591-593
+tests/e2e/models/deepseek_v4_flash/config.py
+  h_aad1df515ba402 414
+tests/unit/model_executor/models/npu/test_deepseek_v4.py
+  h_aad1df515ba402 115-131,140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c83308e744b9901ec17a2c1e3fd7c6c75d79bedd",
+  "prompts": {},
+  "humans": {
+    "h_aad1df515ba402": {
+      "author": "jiaran-king <jiaranran2@gmail.com>"
+    }
+  }
+}

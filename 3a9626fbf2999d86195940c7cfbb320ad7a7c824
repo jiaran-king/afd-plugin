@@ -1,0 +1,76 @@
+tests/unit/v1/worker/npu/test_ubatch_runner.py
+  s_f816acce49b523::t_a98edcd7fe10bc 90-91,94,127,362-363,367,369,371
+tests/unit/v1/worker/test_model_runner_v2.py
+  s_f816acce49b523::t_a98edcd7fe10bc 47-48,369,375,388,390,397-405,1552-1553,1683
+  s_f816acce49b523::t_43a5f5ec8f8fce 1684-1685,1693-1695,1743,1745,1765-1767,1793-1795,1810,1813-1815
+afd_plugin/compat/patches/npu/ascend_config.py
+  s_f816acce49b523::t_72916af2d60edf 41,203,251
+afd_plugin/compat/patches/npu/ascend_platform.py
+  s_f816acce49b523::t_72916af2d60edf 6,60-61
+tests/unit/compat/patches/test_signatures.py
+  s_f816acce49b523::t_b3a2921d30fa80 326-329,332,335,359,385,432
+  s_f816acce49b523::t_f8ba5aded5af46 498
+afd_plugin/v1/worker/npu/ffn_model_runner.py
+  s_f816acce49b523::t_69ffa3fdc90715 375-387,389
+afd_plugin/compat/patches/npu/mrv2_ubatching.py
+  s_f816acce49b523::t_cf4a11c4afc53e 165,182,198
+tests/unit/fakes/kv_cache.py
+  s_f816acce49b523::t_b3a2921d30fa80 15,25,27
+afd_plugin/compat/patches/async_dp_forward_context.py
+  s_f816acce49b523::t_8c12e7030f32b4 3,5-7,9,16,33-34,37,41,43-44,115-116
+tests/unit/compat/patches/test_async_dp_engine.py
+  s_f816acce49b523::t_8c12e7030f32b4 27,48,56,62,68,107-111,212,216-217,226,311,344-348,350,353,377-383,385,388,395-405,421-424,427-428,432,448-450,452,454-455
+afd_plugin/v1/worker/attention_model_runner_v2.py
+  s_f816acce49b523::t_488000b670caa3 141-142,176,193,195,197,237,268
+tests/unit/compat/npu/test_ascend_config_lifecycle.py
+  s_f816acce49b523::t_72916af2d60edf 60,82-87,103-111,206,209,212,233-243,247-253
+afd_plugin/compat/patches/engine_core.py
+  s_f816acce49b523::t_cf4a11c4afc53e 12,27,39,567-578
+  s_f816acce49b523::t_3626733e1952f5 434
+tests/unit/compat/patches/test_config_validation.py
+  s_f816acce49b523::t_b3a2921d30fa80 29,298,319
+tests/unit/compat/test_vllm.py
+  s_f816acce49b523::t_b3a2921d30fa80 18-19,39-40,55,72
+afd_plugin/compat/patches/async_dp_engine.py
+  s_f816acce49b523::t_8c12e7030f32b4 5-10,15,39,115-116,168-170,212,217,253-278,284-285,301-302,406-412,452-454
+afd_plugin/validation.py
+  s_f816acce49b523::t_488000b670caa3 113,219
+tests/unit/compat/patches/test_engine_core.py
+  s_f816acce49b523::t_b3a2921d30fa80 39,63-70,72-74,130-133,158,166,220,227,258-259,272,305,347-351,353-358,361,366,387,455-457,470-471
+  s_f816acce49b523::t_3626733e1952f5 165,473-478,490
+tests/unit/package/test_package.py
+  s_f816acce49b523::t_b3a2921d30fa80 79
+tests/unit/fakes/deepseek_v4.py
+  s_f816acce49b523::t_f8ba5aded5af46 69
+tests/unit/v1/worker/test_npu_model_runner_v2.py
+  s_f816acce49b523::t_f8ba5aded5af46 461,472-474,733,739
+tests/unit/compat/patches/test_async_dp_forward_context.py
+  s_f816acce49b523::t_8c12e7030f32b4 140,144-145,147,177,193,196-197
+afd_plugin/v1/worker/npu/ubatch_runner.py
+  s_f816acce49b523::t_488000b670caa3 27,231-232,240-245
+tests/unit/fakes/ubatching.py
+  s_f816acce49b523::t_a98edcd7fe10bc 141,169,179-185,187-191
+  s_f816acce49b523::t_10277e6a50f169 192-193
+afd_plugin/compat/vllm.py
+  s_f816acce49b523::t_cf4a11c4afc53e 13-14,18,73-75,87
+afd_plugin/v1/worker/npu/attention_model_runner_v2.py
+  s_f816acce49b523::t_cf4a11c4afc53e 147,149,165,181
+tests/unit/compat/patches/npu/test_mrv2_ubatching.py
+  s_f816acce49b523::t_1e883f9ced5284 66-67,81,84,103,122-129,131,171,174
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3a9626fbf2999d86195940c7cfbb320ad7a7c824",
+  "prompts": {},
+  "sessions": {
+    "s_f816acce49b523": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20622-713b-7e00-a34b-bc0d1c1b14ff",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "jiaran-king <jiaranran2@gmail.com>"
+    }
+  }
+}

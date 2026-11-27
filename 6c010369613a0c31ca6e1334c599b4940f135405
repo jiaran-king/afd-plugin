@@ -1,0 +1,36 @@
+tests/unit/distributed/kv_transfer/test_dspark_context.py
+  s_23db3103df03fa::t_dc61620b53c8a3 7
+docs/design/module/model_integration.md
+  s_23db3103df03fa::t_9ce70c0d1e1610 165-169
+tests/e2e/models/deepseek_v4_flash/dspark_eager.py
+  s_23db3103df03fa::t_9ce70c0d1e1610 5
+tests/unit/v1/worker/npu/test_attention_model_runner_v2.py
+  s_23db3103df03fa::t_dc61620b53c8a3 5,52-61,69-72
+afd_plugin/compat/npu/feature_validation.py
+  s_23db3103df03fa::t_dc61620b53c8a3 246-247,249,255
+afd_plugin/model_executor/models/npu/deepseek_v4_dspark.py
+  s_23db3103df03fa::t_1b522a6563577c 8,260-265,268
+tests/unit/compat/npu/test_feature_validation.py
+  s_23db3103df03fa::t_dc61620b53c8a3 38-39
+tests/unit/model_executor/models/test_model_utils.py
+  s_23db3103df03fa::t_1b522a6563577c 7-8,10-18,26-28,30,37-39,44,50-51
+  s_23db3103df03fa::t_ece105a5040952 52
+recipe/README.md
+  s_23db3103df03fa::t_9ce70c0d1e1610 46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6c010369613a0c31ca6e1334c599b4940f135405",
+  "prompts": {},
+  "sessions": {
+    "s_23db3103df03fa": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a17c0a-3db6-7640-b08e-b8ab873174ca",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "AFD维护 Bot <afd-maint-bot@localhost>"
+    }
+  }
+}

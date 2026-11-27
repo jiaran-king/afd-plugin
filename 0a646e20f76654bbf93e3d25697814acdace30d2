@@ -1,0 +1,14 @@
+tests/e2e/models/deepseek_v4_flash/dspark_evidence.py
+  h_aad1df515ba402 50-53,58-63,65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0a646e20f76654bbf93e3d25697814acdace30d2",
+  "prompts": {},
+  "humans": {
+    "h_aad1df515ba402": {
+      "author": "jiaran-king <jiaranran2@gmail.com>"
+    }
+  }
+}
